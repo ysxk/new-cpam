@@ -1,0 +1,50 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run build
+
+      # 重命名为 management.html
+      - run: cp dist/index.html dist/management.html
+
+      # 计算 sha256
+      - name: Compute digest
+        id: digest
+        run: |
+          HASH=$(node scripts/hash.js)
+          echo "value=$HASH" >> "$GITHUB_OUTPUT"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          files: dist/management.html
+          body: |
+            ## 管理面板 ${{ github.ref_name }}
+
+            **Digest:** `${{ steps.digest.outputs.value }}`
+
+            CLIProxyAPI 配置:
+            ```yaml
+            remote-management:
+              panel-github-repository: "https://github.com/${{ github.repository }}"
+            ```
