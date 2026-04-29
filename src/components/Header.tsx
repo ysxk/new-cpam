@@ -11,9 +11,11 @@ import "./Header.css";
 
 const titles: Record<string, string> = {
   "/": "仪表盘",
-  "/keys": "API Keys",
+  "/keys": "下游接入点",
   "/providers": "提供商",
   "/auth-files": "认证文件",
+  "/oauth": "OAuth 登录",
+  "/quota": "配额",
   "/logs": "日志",
   "/config": "YAML 配置",
   "/settings": "系统设置",

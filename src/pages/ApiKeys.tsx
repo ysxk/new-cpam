@@ -18,7 +18,7 @@ export default function ApiKeys() {
     try {
       setKeys(await managementApi.getApiKeys());
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "加载 API Keys 失败");
+      setError(loadError instanceof Error ? loadError.message : "加载下游接入点失败");
     } finally {
       setLoading(false);
     }
@@ -39,7 +39,7 @@ export default function ApiKeys() {
     const next = [...keys, value];
     await managementApi.putApiKeys(next);
     setDraft("");
-    setMessage("已新增 API Key");
+    setMessage("已新增下游接入点");
     await loadKeys();
   }
 
@@ -51,16 +51,16 @@ export default function ApiKeys() {
     await managementApi.patchApiKey(index, value);
     setEditingIndex(null);
     setEditingValue("");
-    setMessage("已更新 API Key");
+    setMessage("已更新下游接入点");
     await loadKeys();
   }
 
   async function removeKey(index: number) {
-    if (!window.confirm("删除这个 API Key？")) {
+    if (!window.confirm("删除这个下游接入点？")) {
       return;
     }
     await managementApi.deleteApiKey(index);
-    setMessage("已删除 API Key");
+    setMessage("已删除下游接入点");
     await loadKeys();
   }
 
@@ -74,8 +74,8 @@ export default function ApiKeys() {
     <div className="page">
       <div className="page-heading">
         <div>
-          <h2>服务 API Keys</h2>
-          <p>这些 Key 用于代理服务自身认证，会同步更新内联配置提供商。</p>
+          <h2>下游接入点</h2>
+          <p>这些 Key 用于下游客户端接入 CPAM 代理服务。</p>
         </div>
         <div className="actions">
           <button className="button" disabled={loading} type="button" onClick={loadKeys}>
@@ -97,7 +97,7 @@ export default function ApiKeys() {
           <div className="panel-header">
             <h3 className="panel-title">
               <Icon name="key" size={16} />
-              Key 列表
+              接入点 Key 列表
             </h3>
             <span className="badge">{keys.length} 个</span>
           </div>
@@ -161,7 +161,7 @@ export default function ApiKeys() {
                 {keys.length === 0 && (
                   <tr>
                     <td colSpan={4}>
-                      <div className="empty-state">暂无服务 API Key</div>
+                      <div className="empty-state">暂无下游接入点</div>
                     </td>
                   </tr>
                 )}
@@ -174,15 +174,15 @@ export default function ApiKeys() {
           <div className="panel-header">
             <h3 className="panel-title">
               <Icon name="plus" size={16} />
-              新增 Key
+              新增接入点
             </h3>
           </div>
           <div className="panel-body form-stack">
             <div className="field">
-              <label htmlFor="new-api-key">API Key</label>
+              <label htmlFor="new-api-key">接入 Key</label>
               <input
                 id="new-api-key"
-                placeholder="输入代理服务认证 Key"
+                placeholder="输入下游客户端使用的接入 Key"
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
               />

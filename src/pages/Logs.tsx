@@ -3,11 +3,19 @@ import { downloadBrowserFile, ErrorLogFile, managementApi } from "../api/client"
 import Icon from "../components/Icon";
 import { formatBytes, formatDate, formatNumber } from "../utils/format";
 
+function isFileLoggingDisabled(error: unknown): boolean {
+  return error instanceof Error && error.message.toLowerCase().includes("logging to file disabled");
+}
+
 export default function Logs() {
   const [lines, setLines] = useState<string[]>([]);
   const [lineCount, setLineCount] = useState(0);
   const [latestTimestamp, setLatestTimestamp] = useState(0);
   const [errorLogs, setErrorLogs] = useState<ErrorLogFile[]>([]);
+  const [selectedErrorLog, setSelectedErrorLog] = useState<ErrorLogFile | null>(null);
+  const [selectedErrorLogContent, setSelectedErrorLogContent] = useState("");
+  const [loadingSelectedErrorLog, setLoadingSelectedErrorLog] = useState(false);
+  const [logsDisabled, setLogsDisabled] = useState(false);
   const [loggingToFile, setLoggingToFile] = useState(false);
   const [requestLog, setRequestLog] = useState(false);
   const [live, setLive] = useState(false);
@@ -21,6 +29,7 @@ export default function Logs() {
     ]);
     if (fileLogging.status === "fulfilled") {
       setLoggingToFile(fileLogging.value);
+      setLogsDisabled(!fileLogging.value);
     }
     if (requestLogging.status === "fulfilled") {
       setRequestLog(requestLogging.value);
@@ -30,12 +39,20 @@ export default function Logs() {
   async function loadLogs(incremental = false) {
     setError("");
     try {
-      const response = await managementApi.getLogs(incremental ? latestTimestamp : undefined);
+      const response = await managementApi.getLogs(incremental ? latestTimestamp : undefined, incremental ? 200 : 600);
       const nextLines = response.lines ?? [];
       setLines((items) => (incremental ? [...items, ...nextLines].slice(-600) : nextLines));
       setLineCount(response["line-count"] ?? nextLines.length);
       setLatestTimestamp(response["latest-timestamp"] ?? latestTimestamp);
+      setLogsDisabled(false);
     } catch (loadError) {
+      if (isFileLoggingDisabled(loadError)) {
+        setLogsDisabled(true);
+        setLines([]);
+        setLineCount(0);
+        setLatestTimestamp(0);
+        return;
+      }
       setError(loadError instanceof Error ? loadError.message : "读取日志失败");
     }
   }
@@ -74,6 +91,14 @@ export default function Logs() {
     await managementApi.setValue(path, value);
     if (key === "logging-to-file") {
       setLoggingToFile(value);
+      setLogsDisabled(!value);
+      if (!value) {
+        setLines([]);
+        setLineCount(0);
+        setLatestTimestamp(0);
+      } else {
+        void loadLogs(false);
+      }
     } else {
       setRequestLog(value);
     }
@@ -97,6 +122,21 @@ export default function Logs() {
     downloadBrowserFile(blob, file.name);
   }
 
+  async function viewErrorLog(file: ErrorLogFile) {
+    setSelectedErrorLog(file);
+    setSelectedErrorLogContent("");
+    setLoadingSelectedErrorLog(true);
+    setError("");
+    try {
+      const blob = await managementApi.downloadErrorLog(file.name);
+      setSelectedErrorLogContent(await blob.text());
+    } catch (viewError) {
+      setError(viewError instanceof Error ? viewError.message : "读取错误请求日志失败");
+    } finally {
+      setLoadingSelectedErrorLog(false);
+    }
+  }
+
   return (
     <div className="page">
       <div className="page-heading">
@@ -113,7 +153,7 @@ export default function Logs() {
             <Icon name="refresh" size={16} />
             刷新
           </button>
-          <button className="button danger" type="button" onClick={clearLogs}>
+          <button className="button danger" disabled={!loggingToFile} type="button" onClick={clearLogs}>
             <Icon name="trash" size={16} />
             清空
           </button>
@@ -163,7 +203,9 @@ export default function Logs() {
         </div>
         <div className="panel-body">
           <div className="log-viewer">
-            {lines.length === 0 ? (
+            {logsDisabled ? (
+              <div className="log-line">文件日志未开启，开启后可查看运行日志。</div>
+            ) : lines.length === 0 ? (
               <div className="log-line">暂无日志</div>
             ) : (
               lines.map((line, index) => (
@@ -204,9 +246,14 @@ export default function Logs() {
                   <td>{formatBytes(file.size)}</td>
                   <td>{formatDate(file.modified)}</td>
                   <td>
-                    <button className="icon-button" title="下载" type="button" onClick={() => downloadErrorLog(file)}>
-                      <Icon name="download" />
-                    </button>
+                    <div className="actions">
+                      <button className="icon-button" title="查看" type="button" onClick={() => viewErrorLog(file)}>
+                        <Icon name="file" />
+                      </button>
+                      <button className="icon-button" title="下载" type="button" onClick={() => downloadErrorLog(file)}>
+                        <Icon name="download" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -221,6 +268,51 @@ export default function Logs() {
           </table>
         </div>
       </section>
+
+      {selectedErrorLog && (
+        <div className="modal-backdrop" role="presentation">
+          <div className="modal-panel log-modal" role="dialog" aria-modal="true" aria-labelledby="error-log-modal-title">
+            <div className="modal-header">
+              <div>
+                <h3 id="error-log-modal-title">请求错误日志</h3>
+                <p className="panel-subtitle">
+                  <span className="mono">{selectedErrorLog.name}</span>
+                  {" · "}
+                  {formatBytes(selectedErrorLog.size)}
+                </p>
+              </div>
+              <button className="icon-button" title="关闭" type="button" onClick={() => setSelectedErrorLog(null)}>
+                <Icon name="x" />
+              </button>
+            </div>
+            <div className="modal-body form-stack">
+              <div className="actions">
+                <button className="button subtle" type="button" onClick={() => viewErrorLog(selectedErrorLog)}>
+                  <Icon name="refresh" size={16} />
+                  重新读取
+                </button>
+                <button className="button" type="button" onClick={() => downloadErrorLog(selectedErrorLog)}>
+                  <Icon name="download" size={16} />
+                  下载
+                </button>
+              </div>
+              <div className="log-viewer request-log-viewer">
+                {loadingSelectedErrorLog ? (
+                  <div className="log-line">读取中...</div>
+                ) : selectedErrorLogContent ? (
+                  selectedErrorLogContent.split("\n").map((line, index) => (
+                    <div className="log-line" key={`${index}-${line.slice(0, 24)}`}>
+                      {line}
+                    </div>
+                  ))
+                ) : (
+                  <div className="log-line">暂无内容</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

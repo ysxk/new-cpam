@@ -85,6 +85,7 @@ export interface OpenAICompatibilityProvider {
 
 export interface AuthFile {
   id?: string;
+  auth_index?: string;
   name: string;
   provider?: string;
   label?: string;
@@ -103,7 +104,36 @@ export interface AuthFile {
   created_at?: string;
   updated_at?: string;
   last_refresh?: string;
+  last_refreshed_at?: string;
+  next_retry_after?: string;
   type?: string;
+  quota?: AuthQuotaState;
+  last_error?: AuthErrorState;
+  model_states?: Record<string, AuthModelState>;
+}
+
+export interface AuthQuotaState {
+  exceeded?: boolean;
+  reason?: string;
+  next_recover_at?: string;
+  backoff_level?: number;
+}
+
+export interface AuthErrorState {
+  code?: string;
+  message?: string;
+  retryable?: boolean;
+  http_status?: number;
+}
+
+export interface AuthModelState {
+  status?: string;
+  status_message?: string;
+  unavailable?: boolean;
+  next_retry_after?: string;
+  updated_at?: string;
+  quota?: AuthQuotaState;
+  last_error?: AuthErrorState;
 }
 
 export interface LogResponse {
@@ -443,8 +473,17 @@ export const managementApi = {
       }),
     }),
 
-  getLogs: (after?: number) =>
-    request<LogResponse>(after ? `/logs?after=${after}` : "/logs"),
+  getLogs: (after?: number, limit = 600) => {
+    const params = new URLSearchParams();
+    if (after) {
+      params.set("after", String(after));
+    }
+    if (limit > 0) {
+      params.set("limit", String(limit));
+    }
+    const query = params.toString();
+    return request<LogResponse>(query ? `/logs?${query}` : "/logs");
+  },
   clearLogs: () =>
     request<{ success?: boolean; message?: string; removed?: number }>("/logs", {
       method: "DELETE",

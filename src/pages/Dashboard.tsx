@@ -285,7 +285,7 @@ export default function Dashboard() {
                 <tr>
                   <th>时间</th>
                   <th>模型</th>
-                  <th>来源</th>
+                  <th>命中账号</th>
                   <th>Token</th>
                   <th>状态</th>
                 </tr>
@@ -323,7 +323,7 @@ export default function Dashboard() {
             <div className="mono">{String(config["proxy-url"] ?? "-")}</div>
           </div>
           <div>
-            <div className="stat-label">服务 API Keys</div>
+            <div className="stat-label">下游接入点</div>
             <div>{formatNumber(Array.isArray(config["api-keys"]) ? config["api-keys"].length : 0)}</div>
           </div>
           <div>

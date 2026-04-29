@@ -1,31 +1,7 @@
 import { ChangeEvent, useEffect, useState } from "react";
-import { AuthFile, downloadBrowserFile, managementApi, OAuthProvider } from "../api/client";
+import { AuthFile, downloadBrowserFile, managementApi } from "../api/client";
 import Icon from "../components/Icon";
 import { formatBytes, formatDate } from "../utils/format";
-
-interface AuthFlow {
-  provider: OAuthProvider;
-  providerKey: string;
-  label: string;
-  state: string;
-  url: string;
-  status: string;
-  error?: string;
-  callbackUrl?: string;
-  callbackSubmitted?: boolean;
-}
-
-const oauthProviders: Array<{
-  provider: OAuthProvider;
-  providerKey: string;
-  label: string;
-}> = [
-  { provider: "anthropic", providerKey: "anthropic", label: "Claude 登录" },
-  { provider: "codex", providerKey: "codex", label: "Codex 登录" },
-  { provider: "gemini-cli", providerKey: "gemini", label: "Gemini 登录" },
-  { provider: "antigravity", providerKey: "antigravity", label: "Antigravity 登录" },
-  { provider: "kimi", providerKey: "kimi", label: "Kimi 登录" },
-];
 
 function fileStatusClass(file: AuthFile): string {
   if (file.disabled || file.unavailable || file.status === "error") {
@@ -37,24 +13,9 @@ function fileStatusClass(file: AuthFile): string {
   return "badge ok";
 }
 
-function flowStatusClass(status: string): string {
-  if (status === "ok") {
-    return "badge ok";
-  }
-  if (status === "error") {
-    return "badge danger";
-  }
-  return "badge warn";
-}
-
 export default function AuthFiles() {
   const [files, setFiles] = useState<AuthFile[]>([]);
-  const [flows, setFlows] = useState<AuthFlow[]>([]);
-  const [activeFlow, setActiveFlow] = useState<AuthFlow | null>(null);
-  const [geminiProjectId, setGeminiProjectId] = useState("");
   const [vertexLocation, setVertexLocation] = useState("us-central1");
-  const [callbackUrl, setCallbackUrl] = useState("");
-  const [submittingCallback, setSubmittingCallback] = useState(false);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -123,132 +84,12 @@ export default function AuthFiles() {
     await loadFiles();
   }
 
-  async function startOAuth(provider: OAuthProvider) {
-    const meta = oauthProviders.find((item) => item.provider === provider);
-    if (!meta) {
-      return;
-    }
-
-    setError("");
-    setMessage("");
-    setCallbackUrl("");
-
-    try {
-      const response = await managementApi.startOAuth(
-        provider,
-        provider === "gemini-cli" ? geminiProjectId : "",
-      );
-      if (!response.url || !response.state) {
-        setError("授权地址返回不完整");
-        return;
-      }
-
-      const nextFlow: AuthFlow = {
-        provider,
-        providerKey: meta.providerKey,
-        label: meta.label,
-        state: response.state,
-        url: response.url,
-        status: "wait",
-      };
-      setActiveFlow(nextFlow);
-      setFlows((items) => [nextFlow, ...items.filter((item) => item.state !== response.state)].slice(0, 8));
-      window.open(response.url, "_blank", "noopener,noreferrer");
-    } catch (startError) {
-      setError(startError instanceof Error ? startError.message : "发起登录失败");
-    }
-  }
-
-  function updateFlow(state: string, patch: Partial<AuthFlow>) {
-    setFlows((items) =>
-      items.map((flow) => (flow.state === state ? { ...flow, ...patch } : flow)),
-    );
-    setActiveFlow((flow) => (flow?.state === state ? { ...flow, ...patch } : flow));
-  }
-
-  async function pollFlow(state: string) {
-    try {
-      const response = await managementApi.pollOAuthStatus(state);
-      updateFlow(state, {
-        status: response.status ?? "wait",
-        error: response.error,
-      });
-      if (response.status === "ok") {
-        setMessage("OAuth 登录已完成");
-        await loadFiles();
-      }
-      if (response.status === "error") {
-        setError(response.error ?? "OAuth 登录失败");
-      }
-    } catch {
-      // Polling is intentionally tolerant; users can still submit callback URL manually.
-    }
-  }
-
-  async function submitCallback() {
-    if (!activeFlow || !callbackUrl.trim()) {
-      return;
-    }
-
-    setSubmittingCallback(true);
-    setError("");
-    try {
-      await managementApi.submitOAuthCallback(
-        activeFlow.providerKey,
-        activeFlow.state,
-        callbackUrl.trim(),
-      );
-      updateFlow(activeFlow.state, {
-        callbackUrl: callbackUrl.trim(),
-        callbackSubmitted: true,
-        status: "wait",
-      });
-      setMessage("回调 URL 已提交，正在等待后端保存认证文件");
-      await pollFlow(activeFlow.state);
-    } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "提交回调 URL 失败");
-    } finally {
-      setSubmittingCallback(false);
-    }
-  }
-
-  async function copyAuthUrl() {
-    if (!activeFlow?.url) {
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(activeFlow.url);
-      setMessage("授权地址已复制");
-    } catch {
-      setError("复制失败");
-    }
-  }
-
-  useEffect(() => {
-    const waitingStates = Array.from(
-      new Set(
-        [activeFlow, ...flows]
-          .filter((flow): flow is AuthFlow => flow !== null && flow.status === "wait")
-          .map((flow) => flow.state),
-      ),
-    );
-    if (waitingStates.length === 0) {
-      return undefined;
-    }
-    const timer = window.setInterval(() => {
-      waitingStates.forEach((state) => {
-        void pollFlow(state);
-      });
-    }, 3000);
-    return () => window.clearInterval(timer);
-  }, [activeFlow, flows]);
-
   return (
     <div className="page">
       <div className="page-heading">
         <div>
           <h2>认证文件</h2>
-          <p>管理 auth-dir 下的 JSON token 文件，支持 OAuth 登录、回调提交和 Vertex 导入。</p>
+          <p>管理 auth-dir 下的 JSON token 文件，支持上传、下载、删除和 Vertex 导入。</p>
         </div>
         <div className="actions">
           <label className="button subtle" htmlFor="auth-file-upload">
@@ -350,28 +191,11 @@ export default function AuthFiles() {
         <aside className="panel">
           <div className="panel-header">
             <h3 className="panel-title">
-              <Icon name="shield" size={16} />
-              登录与导入
+              <Icon name="upload" size={16} />
+              Vertex 导入
             </h3>
           </div>
           <div className="panel-body form-stack">
-            <div className="field">
-              <label htmlFor="gemini-project-id">Gemini project_id</label>
-              <input
-                id="gemini-project-id"
-                placeholder="留空自动选择，ALL 导入全部，GOOGLE_ONE 自动发现"
-                value={geminiProjectId}
-                onChange={(event) => setGeminiProjectId(event.target.value)}
-              />
-            </div>
-            <div className="auth-provider-grid">
-              {oauthProviders.map((item) => (
-                <button className="button subtle" key={item.provider} type="button" onClick={() => startOAuth(item.provider)}>
-                  {item.label}
-                </button>
-              ))}
-            </div>
-
             <div className="field">
               <label htmlFor="vertex-location">Vertex location</label>
               <input
@@ -390,150 +214,6 @@ export default function AuthFiles() {
           </div>
         </aside>
       </div>
-
-      <section className="panel">
-        <div className="panel-header">
-          <h3 className="panel-title">
-            <Icon name="activity" size={16} />
-            最近 OAuth 流程
-          </h3>
-        </div>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>提供商</th>
-                <th>State</th>
-                <th>状态</th>
-                <th>回调</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {flows.map((flow) => (
-                <tr key={flow.state}>
-                  <td>{flow.label}</td>
-                  <td className="mono">{flow.state}</td>
-                  <td>
-                    <span className={flowStatusClass(flow.status)}>{flow.status}</span>
-                    {flow.error && <div className="faint">{flow.error}</div>}
-                  </td>
-                  <td>{flow.callbackSubmitted ? "已提交" : "-"}</td>
-                  <td>
-                    <div className="actions">
-                      <button
-                        className="icon-button"
-                        title="打开弹窗"
-                        type="button"
-                        onClick={() => {
-                          setActiveFlow(flow);
-                          setCallbackUrl(flow.callbackUrl ?? "");
-                        }}
-                      >
-                        <Icon name="edit" />
-                      </button>
-                      <button className="icon-button" title="轮询" type="button" onClick={() => pollFlow(flow.state)}>
-                        <Icon name="refresh" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {flows.length === 0 && (
-                <tr>
-                  <td colSpan={5}>
-                    <div className="empty-state">尚未发起 OAuth 登录</div>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      {activeFlow && (
-        <div className="modal-backdrop" role="presentation">
-          <div className="modal-panel auth-modal" role="dialog" aria-modal="true" aria-labelledby="oauth-modal-title">
-            <div className="modal-header">
-              <div>
-                <h3 id="oauth-modal-title">{activeFlow.label}</h3>
-                <p className="panel-subtitle">State: <span className="mono">{activeFlow.state}</span></p>
-              </div>
-              <button className="icon-button" title="关闭" type="button" onClick={() => setActiveFlow(null)}>
-                <Icon name="x" />
-              </button>
-            </div>
-
-            <div className="oauth-steps">
-              <div className="oauth-step done">
-                <span>1</span>
-                <strong>授权地址</strong>
-              </div>
-              <div className={activeFlow.callbackSubmitted ? "oauth-step done" : "oauth-step active"}>
-                <span>2</span>
-                <strong>回调 URL</strong>
-              </div>
-              <div className={activeFlow.status === "ok" ? "oauth-step done" : "oauth-step active"}>
-                <span>3</span>
-                <strong>保存认证</strong>
-              </div>
-            </div>
-
-            <div className="form-stack">
-              <div className="field">
-                <label htmlFor="oauth-auth-url">授权地址</label>
-                <textarea id="oauth-auth-url" className="compact-textarea mono" readOnly value={activeFlow.url} />
-              </div>
-              <div className="actions">
-                <button className="button" type="button" onClick={() => window.open(activeFlow.url, "_blank", "noopener,noreferrer")}>
-                  <Icon name="archive" size={16} />
-                  打开授权页
-                </button>
-                <button className="button subtle" type="button" onClick={copyAuthUrl}>
-                  <Icon name="copy" size={16} />
-                  复制授权地址
-                </button>
-                <button className="button subtle" type="button" onClick={() => pollFlow(activeFlow.state)}>
-                  <Icon name="refresh" size={16} />
-                  检查状态
-                </button>
-              </div>
-
-              <div className="field">
-                <label htmlFor="oauth-callback-url">回调 URL</label>
-                <textarea
-                  id="oauth-callback-url"
-                  className="callback-textarea mono"
-                  placeholder="http://localhost:.../callback?code=...&state=..."
-                  value={callbackUrl}
-                  onChange={(event) => setCallbackUrl(event.target.value)}
-                />
-              </div>
-
-              <div className="modal-status-row">
-                <span className={flowStatusClass(activeFlow.status)}>{activeFlow.status}</span>
-                {activeFlow.callbackSubmitted && <span className="badge ok">回调已提交</span>}
-                {activeFlow.error && <span className="badge danger">{activeFlow.error}</span>}
-              </div>
-
-              <div className="modal-actions">
-                <button className="button subtle" type="button" onClick={() => setActiveFlow(null)}>
-                  关闭
-                </button>
-                <button
-                  className="button primary"
-                  disabled={!callbackUrl.trim() || submittingCallback}
-                  type="button"
-                  onClick={submitCallback}
-                >
-                  <Icon name="save" size={16} />
-                  提交回调 URL
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

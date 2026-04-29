@@ -528,6 +528,14 @@ tbody tr:hover {
   gap: 8px;
 }
 
+.oauth-provider-button {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 64px;
+  text-align: left;
+}
+
 .modal-backdrop {
   position: fixed;
   z-index: 60;
@@ -548,6 +556,14 @@ tbody tr:hover {
   box-shadow: var(--shadow-panel);
 }
 
+.provider-modal {
+  width: min(860px, 100%);
+}
+
+.log-modal {
+  width: min(980px, 100%);
+}
+
 .modal-header {
   display: flex;
   align-items: flex-start;
@@ -564,6 +580,10 @@ tbody tr:hover {
 }
 
 .auth-modal .form-stack {
+  padding: 16px;
+}
+
+.modal-body {
   padding: 16px;
 }
 
@@ -613,6 +633,10 @@ tbody tr:hover {
 
 .callback-textarea {
   min-height: 108px;
+}
+
+.request-log-viewer {
+  max-height: 64vh;
 }
 
 .modal-status-row,
