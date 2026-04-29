@@ -1,53 +1,119 @@
 .sidebar {
   position: fixed;
-  top: 0;
-  left: 0;
-  bottom: 0;
+  inset: 0 auto 0 0;
   width: var(--sidebar-width);
-  background: var(--color-sidebar);
-  color: #fff;
   display: flex;
   flex-direction: column;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--color-sidebar);
+  color: #edf4ff;
 }
 
 .sidebar-brand {
-  height: var(--header-height);
   display: flex;
   align-items: center;
-  padding: 0 20px;
-  font-size: 18px;
-  font-weight: 700;
-  letter-spacing: 2px;
+  gap: 12px;
+  height: var(--header-height);
+  padding: 0 18px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: #22b8a7;
+  color: #fff;
+  font-weight: 900;
+}
+
+.sidebar-brand strong,
+.sidebar-brand span {
+  display: block;
+}
+
+.sidebar-brand strong {
+  line-height: 1.1;
+  font-size: 16px;
+}
+
+.sidebar-brand span {
+  margin-top: 3px;
+  color: #9fb0c8;
+  font-size: 12px;
+}
+
 .sidebar-nav {
+  display: flex;
   flex: 1;
-  padding: 12px 0;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 10px;
 }
 
 .sidebar-link {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 20px;
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 14px;
-  transition: all 0.15s;
+  gap: 11px;
+  min-height: 42px;
+  border-radius: 8px;
+  padding: 0 12px;
+  color: #afbed2;
+  font-weight: 750;
 }
 
 .sidebar-link:hover {
-  color: #fff;
   background: rgba(255, 255, 255, 0.06);
+  color: #fff;
 }
 
 .sidebar-link.active {
+  background: #2563eb;
   color: #fff;
-  background: var(--color-primary);
 }
 
-.sidebar-link-icon {
-  font-size: 16px;
-  width: 20px;
-  text-align: center;
+.sidebar-footer {
+  margin: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 8px;
+  background: var(--color-sidebar-soft);
+  padding: 12px;
+}
+
+.footer-label,
+.footer-value {
+  display: block;
+}
+
+.footer-label {
+  color: #9fb0c8;
+  font-size: 12px;
+}
+
+.footer-value {
+  margin-top: 4px;
+  color: #fff;
+  font-family:
+    "SFMono-Regular", Consolas, "Liberation Mono", Menlo, "Noto Sans Mono", monospace;
+  font-size: 12px;
+}
+
+@media (max-width: 820px) {
+  .sidebar-brand {
+    justify-content: center;
+    padding: 0;
+  }
+
+  .sidebar-brand div:not(.brand-mark),
+  .sidebar-link span,
+  .sidebar-footer {
+    display: none;
+  }
+
+  .sidebar-link {
+    justify-content: center;
+    padding: 0;
+  }
 }

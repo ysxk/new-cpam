@@ -1,30 +1,52 @@
 import { NavLink } from "react-router-dom";
+import Icon, { IconName } from "./Icon";
 import "./Sidebar.css";
 
-const navItems = [
-  { to: "/", label: "仪表盘", icon: "📊" },
-  { to: "/releases", label: "发布管理", icon: "🚀" },
+interface NavItem {
+  to: string;
+  label: string;
+  icon: IconName;
+}
+
+const navItems: NavItem[] = [
+  { to: "/", label: "仪表盘", icon: "activity" },
+  { to: "/providers", label: "提供商", icon: "layers" },
+  { to: "/keys", label: "API Keys", icon: "key" },
+  { to: "/auth-files", label: "认证文件", icon: "shield" },
+  { to: "/logs", label: "日志", icon: "logs" },
+  { to: "/config", label: "YAML 配置", icon: "code" },
+  { to: "/settings", label: "系统设置", icon: "settings" },
 ];
 
 export default function Sidebar() {
   return (
     <aside className="sidebar">
-      <div className="sidebar-brand">CPAM</div>
+      <div className="sidebar-brand">
+        <div className="brand-mark">C</div>
+        <div>
+          <strong>CPAM</strong>
+          <span>CLIProxyAPI</span>
+        </div>
+      </div>
+
       <nav className="sidebar-nav">
         {navItems.map((item) => (
           <NavLink
             key={item.to}
-            to={item.to}
+            className={({ isActive }) => `sidebar-link${isActive ? " active" : ""}`}
             end={item.to === "/"}
-            className={({ isActive }) =>
-              `sidebar-link${isActive ? " active" : ""}`
-            }
+            to={item.to}
           >
-            <span className="sidebar-link-icon">{item.icon}</span>
-            {item.label}
+            <Icon name={item.icon} size={18} />
+            <span>{item.label}</span>
           </NavLink>
         ))}
       </nav>
+
+      <div className="sidebar-footer">
+        <span className="footer-label">管理 API</span>
+        <span className="footer-value">/v0/management</span>
+      </div>
     </aside>
   );
 }
