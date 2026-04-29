@@ -948,7 +948,7 @@ tbody tr:hover {
 .quota-account-card {
   display: flex;
   min-width: 0;
-  min-height: 370px;
+  min-height: 250px;
   flex-direction: column;
   gap: 13px;
   border: 1px solid var(--color-border);
@@ -1099,56 +1099,12 @@ tbody tr:hover {
   justify-content: center;
 }
 
-.quota-card-stats,
-.quota-card-meta {
-  display: grid;
-  gap: 8px;
-}
-
-.quota-card-stats {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-}
-
-.quota-card-meta {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  margin-top: auto;
-}
-
-.quota-card-stats div,
-.quota-card-meta div {
-  min-width: 0;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  background: var(--color-card-muted);
-  padding: 8px;
-}
-
-.quota-card-stats span,
-.quota-card-stats strong,
-.quota-card-meta span,
-.quota-card-meta strong {
-  display: block;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.quota-card-stats span,
-.quota-card-meta span {
-  color: var(--color-faint);
-  font-size: 11px;
-  font-weight: 750;
-}
-
-.quota-card-stats strong,
-.quota-card-meta strong {
-  margin-top: 4px;
-  font-size: 12px;
-}
-
 .quota-card-footer .button {
   min-height: 34px;
+}
+
+.quota-card-footer {
+  margin-top: auto;
 }
 
 .quota-cell {
@@ -1225,19 +1181,36 @@ tbody tr:hover {
 
 .quota-meter-value {
   flex: 0 0 auto;
-  font-size: 12px;
+  min-width: 42px;
+  border-radius: 999px;
+  padding: 2px 7px;
+  font-size: 11px;
   font-weight: 850;
+  text-align: center;
+}
+
+.quota-meter-value.empty {
+  background: #eef3f8;
+  color: var(--color-faint);
 }
 
 .quota-meter-value.ok {
+  background: var(--color-teal-soft);
   color: var(--color-teal);
 }
 
+.quota-meter-value.mid {
+  background: var(--color-primary-soft);
+  color: #1d4ed8;
+}
+
 .quota-meter-value.warn {
+  background: var(--color-amber-soft);
   color: var(--color-amber);
 }
 
 .quota-meter-value.danger {
+  background: var(--color-red-soft);
   color: var(--color-red);
 }
 
@@ -1256,8 +1229,16 @@ tbody tr:hover {
   transition: width 0.18s ease;
 }
 
+.quota-meter-fill.empty {
+  background: #c9d5e4;
+}
+
 .quota-meter-fill.ok {
   background: var(--color-teal);
+}
+
+.quota-meter-fill.mid {
+  background: var(--color-primary);
 }
 
 .quota-meter-fill.warn {
@@ -1390,8 +1371,6 @@ tbody tr:hover {
   .auth-card-grid,
   .auth-card-meta,
   .quota-card-grid,
-  .quota-card-stats,
-  .quota-card-meta,
   .quota-failure-list {
     grid-template-columns: 1fr;
   }

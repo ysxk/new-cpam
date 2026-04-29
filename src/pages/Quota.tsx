@@ -294,15 +294,20 @@ function buildAccountRows(files: AuthFile[], rows: RequestRow[]): AccountQuotaRo
   });
 }
 
-function realQuotaTone(percent: number | null): "ok" | "warn" | "danger" {
+type RealQuotaTone = "empty" | "danger" | "warn" | "mid" | "ok";
+
+function realQuotaTone(percent: number | null): RealQuotaTone {
   if (percent === null) {
-    return "warn";
+    return "empty";
   }
   if (percent <= 10) {
     return "danger";
   }
   if (percent <= 30) {
     return "warn";
+  }
+  if (percent <= 60) {
+    return "mid";
   }
   return "ok";
 }
@@ -388,6 +393,7 @@ function renderRealQuota(result: RealQuotaResult | undefined) {
         <div className="quota-metrics">
           {result.metrics.slice(0, 6).map((metric) => {
             const tone = realQuotaTone(metric.percent);
+            const percent = metric.percent === null ? 0 : Math.max(4, Math.min(100, metric.percent));
             return (
               <div className="quota-metric" key={metric.id}>
                 <div className="quota-meter-meta">
@@ -401,7 +407,7 @@ function renderRealQuota(result: RealQuotaResult | undefined) {
                 <div className="quota-meter">
                   <div
                     className={`quota-meter-fill ${tone}`}
-                    style={{ width: `${metric.percent === null ? 0 : Math.max(4, metric.percent)}%` }}
+                    style={{ width: `${percent}%` }}
                   />
                 </div>
                 {(metric.amount || metric.reset) && (
@@ -666,44 +672,6 @@ export default function Quota() {
                   {row.reason && <div className={`quota-card-message ${row.quotaClass}`}>{row.reason}</div>}
 
                   <div className="quota-card-real">{renderRealQuota(realQuota)}</div>
-
-                  <div className="quota-card-stats">
-                    <div>
-                      <span>请求</span>
-                      <strong>{formatNumber(row.requests)}</strong>
-                    </div>
-                    <div>
-                      <span>失败</span>
-                      <strong>{formatNumber(row.failed)}</strong>
-                    </div>
-                    <div>
-                      <span>配额失败</span>
-                      <strong>{formatNumber(row.quotaFailures)}</strong>
-                    </div>
-                    <div>
-                      <span>Tokens</span>
-                      <strong>{formatNumber(row.tokens, true)}</strong>
-                    </div>
-                    <div>
-                      <span>模型</span>
-                      <strong>{formatNumber(row.models)}</strong>
-                    </div>
-                  </div>
-
-                  <div className="quota-card-meta">
-                    <div>
-                      <span>最近命中</span>
-                      <strong>{formatDate(row.lastSeen)}</strong>
-                    </div>
-                    <div>
-                      <span>恢复时间</span>
-                      <strong>{formatDate(row.nextRecover)}</strong>
-                    </div>
-                    <div>
-                      <span>认证</span>
-                      <strong className="mono">{row.authIndex || "-"}</strong>
-                    </div>
-                  </div>
 
                   <div className="quota-card-footer">
                     <span className={`badge ${runtimeBadgeClass(row.runtimeStatus)}`}>
