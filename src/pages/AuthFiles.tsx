@@ -1,9 +1,40 @@
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
+import antigravityIcon from "@lobehub/icons-static-svg/icons/antigravity-color.svg?url";
+import claudeIcon from "@lobehub/icons-static-svg/icons/claude-color.svg?url";
+import codexIcon from "@lobehub/icons-static-svg/icons/codex-color.svg?url";
+import geminiIcon from "@lobehub/icons-static-svg/icons/gemini-color.svg?url";
+import googleIcon from "@lobehub/icons-static-svg/icons/google-color.svg?url";
+import kimiIcon from "@lobehub/icons-static-svg/icons/kimi-color.svg?url";
+import openaiIcon from "@lobehub/icons-static-svg/icons/openai.svg?url";
+import vertexIcon from "@lobehub/icons-static-svg/icons/vertexai-color.svg?url";
 import { AuthFile, downloadBrowserFile, managementApi } from "../api/client";
 import Icon from "../components/Icon";
 import { formatBytes, formatDate } from "../utils/format";
 
 type StatusFilter = "all" | "ready" | "warning" | "error";
+type ProviderTone =
+  | "antigravity"
+  | "claude"
+  | "codex"
+  | "default"
+  | "gemini"
+  | "google"
+  | "kimi"
+  | "openai"
+  | "vertex";
+
+type BrandIcon = string;
+
+const providerIcons: Partial<Record<ProviderTone, BrandIcon>> = {
+  antigravity: antigravityIcon,
+  claude: claudeIcon,
+  codex: codexIcon,
+  gemini: geminiIcon,
+  google: googleIcon,
+  kimi: kimiIcon,
+  openai: openaiIcon,
+  vertex: vertexIcon,
+};
 
 function statusKind(file: AuthFile): Exclude<StatusFilter, "all"> {
   if (file.disabled || file.unavailable || file.status === "error") {
@@ -43,25 +74,50 @@ function providerName(file: AuthFile): string {
   return file.provider ?? file.type ?? "unknown";
 }
 
-function providerTone(file: AuthFile): string {
+function providerTone(file: AuthFile): ProviderTone {
   const provider = providerName(file).toLowerCase();
+  if (provider.includes("antigravity")) {
+    return "antigravity";
+  }
   if (provider.includes("claude") || provider.includes("anthropic")) {
     return "claude";
   }
-  if (provider.includes("codex") || provider.includes("openai")) {
+  if (provider.includes("codex")) {
     return "codex";
   }
-  if (provider.includes("gemini") || provider.includes("vertex")) {
+  if (provider.includes("vertex")) {
+    return "vertex";
+  }
+  if (provider.includes("gemini") || provider.includes("aistudio")) {
     return "gemini";
   }
   if (provider.includes("kimi")) {
     return "kimi";
   }
+  if (provider.includes("openai")) {
+    return "openai";
+  }
+  if (provider.includes("google")) {
+    return "google";
+  }
   return "default";
 }
 
-function providerInitial(file: AuthFile): string {
-  return providerName(file).trim().slice(0, 1).toUpperCase() || "A";
+function providerLabel(file: AuthFile): string {
+  const provider = providerName(file);
+  const tone = providerTone(file);
+  const labels: Record<ProviderTone, string> = {
+    antigravity: "Antigravity",
+    claude: "Claude",
+    codex: "Codex",
+    default: provider,
+    gemini: "Gemini",
+    google: "Google",
+    kimi: "Kimi",
+    openai: "OpenAI",
+    vertex: "Vertex",
+  };
+  return labels[tone];
 }
 
 function accountLabel(file: AuthFile): string {
@@ -83,6 +139,22 @@ function matchesSearch(file: AuthFile, query: string): boolean {
     .join(" ")
     .toLowerCase();
   return text.includes(query.trim().toLowerCase());
+}
+
+function ProviderBadge({ file }: { file: AuthFile }) {
+  const tone = providerTone(file);
+  const label = providerLabel(file);
+  const Logo = providerIcons[tone];
+  const initial = label.trim().slice(0, 1).toUpperCase() || "A";
+
+  return (
+    <span className={`auth-provider-pill ${tone}`} title={providerName(file)}>
+      <span className="auth-provider-logo">
+        {Logo ? <img src={Logo} alt="" aria-hidden="true" /> : <span>{initial}</span>}
+      </span>
+      <span>{label}</span>
+    </span>
+  );
 }
 
 export default function AuthFiles() {
@@ -277,12 +349,12 @@ export default function AuthFiles() {
               return (
                 <article className={`auth-file-card ${statusKind(file)}`} key={file.id ?? file.name}>
                   <div className="auth-card-top">
-                    <div className={`auth-provider-avatar ${providerTone(file)}`}>{providerInitial(file)}</div>
-                    <div className="auth-card-title">
-                      <strong>{providerName(file)}</strong>
-                      <span className="mono">{file.name}</span>
-                    </div>
+                    <ProviderBadge file={file} />
                     <span className={fileStatusClass(file)}>{statusLabel(file)}</span>
+                  </div>
+
+                  <div className="auth-card-title">
+                    <strong className="mono">{file.name}</strong>
                   </div>
 
                   <div className="auth-account-line">

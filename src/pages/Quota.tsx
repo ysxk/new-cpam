@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AuthFile,
   managementApi,
@@ -8,6 +8,14 @@ import {
 } from "../api/client";
 import Icon from "../components/Icon";
 import { formatDate, formatNumber } from "../utils/format";
+import {
+  buildLoadingQuota,
+  buildQuotaError,
+  fetchRealQuota,
+  quotaLookupKey,
+  supportsRealQuota,
+} from "../utils/quotaLookup";
+import type { RealQuotaResult } from "../utils/quotaLookup";
 
 interface RequestRow extends UsageDetail {
   api: string;
@@ -26,10 +34,12 @@ interface UsageAggregate {
 
 interface AccountQuotaRow {
   key: string;
+  fileKey: string;
   provider: string;
   account: string;
   fileName: string;
   authIndex: string;
+  canQueryRealQuota: boolean;
   runtimeStatus: string;
   quotaStatus: string;
   quotaClass: "ok" | "warn" | "danger";
@@ -209,12 +219,15 @@ function buildAccountRows(files: AuthFile[], rows: RequestRow[]): AccountQuotaRo
     }
 
     const quota = quotaState(file, usageStats);
+    const key = file.id ?? file.name;
     return {
-      key: file.id ?? file.name,
+      key,
+      fileKey: key,
       provider: providerName(file),
       account: accountName(file),
       fileName: file.name,
       authIndex,
+      canQueryRealQuota: supportsRealQuota(file),
       runtimeStatus: runtimeStatus(file),
       quotaStatus: quota.quotaStatus,
       quotaClass: quota.quotaClass,
@@ -233,10 +246,12 @@ function buildAccountRows(files: AuthFile[], rows: RequestRow[]): AccountQuotaRo
     .filter(([source]) => source && !matchedSources.has(source))
     .map(([source, usageStats]) => ({
       key: `usage-source-${source}`,
+      fileKey: `usage-source-${source}`,
       provider: "-",
       account: source,
       fileName: "-",
       authIndex: "-",
+      canQueryRealQuota: false,
       runtimeStatus: "usage-only",
       quotaStatus: usageStats.quotaFailures > 0 ? "疑似耗尽" : "统计记录",
       quotaClass: usageStats.quotaFailures > 0 ? "danger" as const : "warn" as const,
@@ -253,10 +268,12 @@ function buildAccountRows(files: AuthFile[], rows: RequestRow[]): AccountQuotaRo
     .filter(([authIndex]) => authIndex && !matchedAuthIndexes.has(authIndex))
     .map(([authIndex, usageStats]) => ({
       key: `usage-auth-${authIndex}`,
+      fileKey: `usage-auth-${authIndex}`,
       provider: "-",
       account: "-",
       fileName: "-",
       authIndex,
+      canQueryRealQuota: false,
       runtimeStatus: "usage-only",
       quotaStatus: usageStats.quotaFailures > 0 ? "疑似耗尽" : "统计记录",
       quotaClass: usageStats.quotaFailures > 0 ? "danger" as const : "warn" as const,
@@ -277,14 +294,160 @@ function buildAccountRows(files: AuthFile[], rows: RequestRow[]): AccountQuotaRo
   });
 }
 
+function realQuotaTone(percent: number | null): "ok" | "warn" | "danger" {
+  if (percent === null) {
+    return "warn";
+  }
+  if (percent <= 10) {
+    return "danger";
+  }
+  if (percent <= 30) {
+    return "warn";
+  }
+  return "ok";
+}
+
+function realQuotaHasLowValue(result: RealQuotaResult | undefined): boolean {
+  return result?.status === "success" && result.metrics.some((metric) => metric.percent !== null && metric.percent <= 30);
+}
+
+function realQuotaBadge(result: RealQuotaResult | undefined) {
+  if (!result) {
+    return <span className="badge warn">未查询</span>;
+  }
+  if (result.status === "loading") {
+    return <span className="badge warn">查询中</span>;
+  }
+  if (result.status === "error") {
+    return <span className="badge danger">查询失败</span>;
+  }
+  if (result.status === "unsupported") {
+    return <span className="badge warn">不可查询</span>;
+  }
+  const low = realQuotaHasLowValue(result);
+  return <span className={`badge ${low ? "warn" : "ok"}`}>{low ? "低额度" : "已查询"}</span>;
+}
+
+function renderRealQuota(result: RealQuotaResult | undefined) {
+  if (!result) {
+    return <div className="quota-inline-message">点击查询实际配额</div>;
+  }
+
+  if (result.status === "loading") {
+    return <div className="quota-inline-message">正在通过 api-call 查询上游配额...</div>;
+  }
+
+  if (result.status === "error" || result.status === "unsupported") {
+    return (
+      <div className="quota-inline-message danger">
+        {result.statusCode ? `${result.statusCode} ` : ""}
+        {result.message ?? "无法查询实际配额"}
+      </div>
+    );
+  }
+
+  return (
+    <div className="quota-live">
+      <div className="quota-live-head">
+        {result.plan && <span className="quota-plan">{result.plan}</span>}
+        <span className="faint">查询 {formatDate(result.checkedAt)}</span>
+      </div>
+      {result.metrics.length === 0 && (
+        <div className="quota-inline-message">{result.message ?? "上游未返回可展示的配额窗口"}</div>
+      )}
+      {result.metrics.length > 0 && (
+        <div className="quota-metrics">
+          {result.metrics.slice(0, 6).map((metric) => {
+            const tone = realQuotaTone(metric.percent);
+            return (
+              <div className="quota-metric" key={metric.id}>
+                <div className="quota-meter-meta">
+                  <span className="quota-meter-label" title={metric.note}>
+                    {metric.label}
+                  </span>
+                  <span className={`quota-meter-value ${tone}`}>
+                    {metric.percent === null ? "--" : `${Math.round(metric.percent)}%`}
+                  </span>
+                </div>
+                <div className="quota-meter">
+                  <div
+                    className={`quota-meter-fill ${tone}`}
+                    style={{ width: `${metric.percent === null ? 0 : Math.max(4, metric.percent)}%` }}
+                  />
+                </div>
+                {(metric.amount || metric.reset) && (
+                  <div className="quota-meter-sub">
+                    {metric.amount && <span>{metric.amount}</span>}
+                    {metric.reset && <span>重置 {metric.reset}</span>}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {result.metrics.length > 6 && (
+            <div className="quota-inline-message">还有 {result.metrics.length - 6} 个配额窗口</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Quota() {
   const [usageResponse, setUsageResponse] = useState<UsageResponse>({});
   const [authFiles, setAuthFiles] = useState<AuthFile[]>([]);
+  const [realQuotas, setRealQuotas] = useState<Record<string, RealQuotaResult>>({});
   const [switchProject, setSwitchProject] = useState(false);
   const [switchPreviewModel, setSwitchPreviewModel] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [realQuotaLoading, setRealQuotaLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const autoQuotaStartedRef = useRef(false);
+
+  async function refreshOneRealQuota(file: AuthFile) {
+    const key = quotaLookupKey(file);
+    setRealQuotas((prev) => ({ ...prev, [key]: buildLoadingQuota(file) }));
+    try {
+      const result = await fetchRealQuota(file);
+      setRealQuotas((prev) => ({ ...prev, [key]: result }));
+    } catch (err) {
+      setRealQuotas((prev) => ({ ...prev, [key]: buildQuotaError(file, err) }));
+    }
+  }
+
+  async function refreshAllRealQuotas(files = authFiles, showMessage = true) {
+    const targets = files.filter(supportsRealQuota);
+    if (targets.length === 0) {
+      if (showMessage) {
+        setMessage("没有可查询实际配额的账号");
+      }
+      return;
+    }
+
+    setRealQuotaLoading(true);
+    if (showMessage) {
+      setMessage("");
+    }
+    try {
+      let nextIndex = 0;
+      const workerCount = Math.min(3, targets.length);
+      await Promise.all(
+        Array.from({ length: workerCount }, async () => {
+          while (nextIndex < targets.length) {
+            const target = targets[nextIndex];
+            nextIndex += 1;
+            await refreshOneRealQuota(target);
+          }
+        }),
+      );
+      if (showMessage) {
+        setMessage(`已查询 ${targets.length} 个账号的实际配额`);
+      }
+    } finally {
+      setRealQuotaLoading(false);
+    }
+  }
 
   async function loadQuota() {
     setLoading(true);
@@ -305,6 +468,10 @@ export default function Quota() {
       }
       if (auths.status === "fulfilled") {
         setAuthFiles(auths.value);
+        if (!autoQuotaStartedRef.current) {
+          autoQuotaStartedRef.current = true;
+          void refreshAllRealQuotas(auths.value, false);
+        }
       }
       if (project.status === "fulfilled") {
         setSwitchProject(project.value);
@@ -348,24 +515,43 @@ export default function Quota() {
   const usage = usageResponse.usage ?? {};
   const requestRows = useMemo(() => flattenRequests(usage.apis), [usage.apis]);
   const accountRows = useMemo(() => buildAccountRows(authFiles, requestRows), [authFiles, requestRows]);
+  const authFileByKey = useMemo(() => {
+    const map = new Map<string, AuthFile>();
+    authFiles.forEach((file) => map.set(quotaLookupKey(file), file));
+    return map;
+  }, [authFiles]);
   const quotaFailures = useMemo(
     () => requestRows.filter((row) => row.failed && isQuotaText(row.error)).slice(0, 40),
     [requestRows],
   );
   const quotaAccountCount = accountRows.filter((row) => row.quotaFailures > 0 || row.quotaStatus === "疑似耗尽").length;
-  const okAccountCount = accountRows.filter((row) => row.quotaClass === "ok").length;
+  const realQuotaResults = Object.values(realQuotas);
+  const realQuotaSuccessCount = realQuotaResults.filter((row) => row.status === "success").length;
+  const lowRealQuotaCount = realQuotaResults.filter(realQuotaHasLowValue).length;
+  const realQuotaSupportedCount = authFiles.filter(supportsRealQuota).length;
 
   return (
     <div className="page">
       <div className="page-heading">
         <div>
           <h2>配额</h2>
-          <p>按账号查看配额状态、命中统计、疑似配额失败，并控制配额耗尽时的自动切换策略。</p>
+          <p>按账号查看真实上游配额、命中统计、疑似配额失败，并控制配额耗尽时的自动切换策略。</p>
         </div>
-        <button className="button" disabled={loading} type="button" onClick={loadQuota}>
-          <Icon name="refresh" size={16} />
-          刷新
-        </button>
+        <div className="actions">
+          <button
+            className="button primary"
+            disabled={realQuotaLoading || realQuotaSupportedCount === 0}
+            type="button"
+            onClick={() => void refreshAllRealQuotas()}
+          >
+            <Icon name="activity" size={16} />
+            查询实际配额
+          </button>
+          <button className="button" disabled={loading} type="button" onClick={loadQuota}>
+            <Icon name="refresh" size={16} />
+            刷新
+          </button>
+        </div>
       </div>
 
       {error && <div className="error-state">{error}</div>}
@@ -378,14 +564,14 @@ export default function Quota() {
           <div className="stat-trend">认证文件与统计命中账号</div>
         </div>
         <div className="stat-card">
-          <div className="stat-label">正常</div>
-          <div className="stat-value">{formatNumber(okAccountCount)}</div>
-          <div className="stat-trend">未发现配额异常</div>
+          <div className="stat-label">已查询配额</div>
+          <div className="stat-value">{formatNumber(realQuotaSuccessCount)}</div>
+          <div className="stat-trend">可查询账号 {formatNumber(realQuotaSupportedCount)}</div>
         </div>
         <div className="stat-card">
-          <div className="stat-label">疑似配额账号</div>
-          <div className="stat-value">{formatNumber(quotaAccountCount)}</div>
-          <div className="stat-trend">账号级或请求级命中</div>
+          <div className="stat-label">低配额 / 疑似耗尽</div>
+          <div className="stat-value">{formatNumber(lowRealQuotaCount + quotaAccountCount)}</div>
+          <div className="stat-trend">实际配额与请求错误合并</div>
         </div>
         <div className="stat-card">
           <div className="stat-label">总失败</div>
@@ -419,7 +605,7 @@ export default function Quota() {
               账号配额概览
             </h3>
             <p className="panel-subtitle">
-              当前管理 API 未提供剩余额度数值；这里展示账号状态、命中统计和疑似配额耗尽信号。
+              通过 /v0/management/api-call 使用账号 token 查询上游配额；失败请求仍作为辅助判断。
             </p>
           </div>
           <span className="badge">{accountRows.length} 个账号</span>
@@ -431,6 +617,7 @@ export default function Quota() {
                 <th>提供商</th>
                 <th>账号</th>
                 <th>配额</th>
+                <th>实际配额</th>
                 <th>运行状态</th>
                 <th>请求</th>
                 <th>失败</th>
@@ -440,34 +627,58 @@ export default function Quota() {
                 <th>最近命中</th>
                 <th>恢复时间</th>
                 <th>认证</th>
+                <th>操作</th>
               </tr>
             </thead>
             <tbody>
-              {accountRows.map((row) => (
-                <tr key={row.key}>
-                  <td>{row.provider}</td>
-                  <td>
-                    <div>{row.account}</div>
-                    <div className="faint mono">{row.fileName}</div>
-                    {row.reason && <div className="faint">{row.reason}</div>}
-                  </td>
-                  <td>
-                    <span className={`badge ${row.quotaClass}`}>{row.quotaStatus}</span>
-                  </td>
-                  <td>{row.runtimeStatus}</td>
-                  <td>{formatNumber(row.requests)}</td>
-                  <td>{formatNumber(row.failed)}</td>
-                  <td>{formatNumber(row.quotaFailures)}</td>
-                  <td>{formatNumber(row.tokens, true)}</td>
-                  <td>{formatNumber(row.models)}</td>
-                  <td>{formatDate(row.lastSeen)}</td>
-                  <td>{formatDate(row.nextRecover)}</td>
-                  <td className="mono">{row.authIndex || "-"}</td>
-                </tr>
-              ))}
+              {accountRows.map((row) => {
+                const realQuota = realQuotas[row.fileKey];
+                const file = authFileByKey.get(row.fileKey);
+                return (
+                  <tr key={row.key}>
+                    <td>{row.provider}</td>
+                    <td>
+                      <div>{row.account}</div>
+                      <div className="faint mono">{row.fileName}</div>
+                      {row.reason && <div className="faint">{row.reason}</div>}
+                    </td>
+                    <td>
+                      <div className="quota-status-stack">
+                        <span className={`badge ${row.quotaClass}`}>{row.quotaStatus}</span>
+                        {realQuotaBadge(realQuota)}
+                      </div>
+                    </td>
+                    <td className="quota-cell">{renderRealQuota(realQuota)}</td>
+                    <td>{row.runtimeStatus}</td>
+                    <td>{formatNumber(row.requests)}</td>
+                    <td>{formatNumber(row.failed)}</td>
+                    <td>{formatNumber(row.quotaFailures)}</td>
+                    <td>{formatNumber(row.tokens, true)}</td>
+                    <td>{formatNumber(row.models)}</td>
+                    <td>{formatDate(row.lastSeen)}</td>
+                    <td>{formatDate(row.nextRecover)}</td>
+                    <td className="mono">{row.authIndex || "-"}</td>
+                    <td>
+                      {row.canQueryRealQuota && file ? (
+                        <button
+                          className="button subtle"
+                          disabled={realQuota?.status === "loading"}
+                          type="button"
+                          onClick={() => void refreshOneRealQuota(file)}
+                        >
+                          <Icon name="refresh" size={15} />
+                          查询
+                        </button>
+                      ) : (
+                        <span className="faint">-</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
               {accountRows.length === 0 && (
                 <tr>
-                  <td colSpan={12}>
+                  <td colSpan={14}>
                     <div className="empty-state">暂无账号。请先在认证文件或 OAuth 登录中添加账号。</div>
                   </td>
                 </tr>

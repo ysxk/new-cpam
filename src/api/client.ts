@@ -86,14 +86,17 @@ export interface OpenAICompatibilityProvider {
 export interface AuthFile {
   id?: string;
   auth_index?: string;
+  authIndex?: string | number | null;
   name: string;
   provider?: string;
   label?: string;
   status?: string;
+  statusMessage?: string;
   status_message?: string;
   disabled?: boolean;
   unavailable?: boolean;
   runtime_only?: boolean;
+  runtimeOnly?: boolean | string;
   source?: string;
   path?: string;
   size?: number;
@@ -101,6 +104,11 @@ export interface AuthFile {
   email?: string;
   account_type?: string;
   account?: string;
+  id_token?: JsonObject | string;
+  plan_type?: string;
+  planType?: string;
+  metadata?: JsonObject;
+  attributes?: JsonObject;
   created_at?: string;
   updated_at?: string;
   last_refresh?: string;
@@ -167,6 +175,31 @@ export interface VertexImportResponse {
   project_id?: string;
   email?: string;
   location?: string;
+}
+
+export interface ApiCallRequest {
+  auth_index?: string;
+  authIndex?: string;
+  AuthIndex?: string;
+  method: string;
+  url: string;
+  header?: Record<string, string>;
+  data?: string;
+}
+
+interface RawApiCallResponse {
+  status_code?: number;
+  statusCode?: number;
+  header?: Record<string, string[]>;
+  headers?: Record<string, string[]>;
+  body?: unknown;
+}
+
+export interface ApiCallResult<T = unknown> {
+  statusCode: number;
+  header: Record<string, string[]>;
+  bodyText: string;
+  body: T | null;
 }
 
 export class ManagementApiError extends Error {
@@ -331,6 +364,76 @@ function encodeQuery(value: string | number | boolean) {
   return encodeURIComponent(String(value));
 }
 
+function normalizeApiCallBody(input: unknown): { bodyText: string; body: unknown | null } {
+  if (input === undefined || input === null) {
+    return { bodyText: "", body: null };
+  }
+
+  if (typeof input === "string") {
+    const text = input;
+    const trimmed = text.trim();
+    if (!trimmed) {
+      return { bodyText: text, body: null };
+    }
+    try {
+      return { bodyText: text, body: JSON.parse(trimmed) };
+    } catch {
+      return { bodyText: text, body: text };
+    }
+  }
+
+  try {
+    return { bodyText: JSON.stringify(input), body: input };
+  } catch {
+    return { bodyText: String(input), body: input };
+  }
+}
+
+function normalizeApiCallResponse<T = unknown>(response: RawApiCallResponse): ApiCallResult<T> {
+  const { bodyText, body } = normalizeApiCallBody(response.body);
+  return {
+    statusCode: Number(response.status_code ?? response.statusCode ?? 0),
+    header: response.header ?? response.headers ?? {},
+    bodyText,
+    body: body as T | null,
+  };
+}
+
+export function getApiCallErrorMessage(result: ApiCallResult): string {
+  const body = result.body;
+  let message = "";
+
+  if (body && typeof body === "object") {
+    const item = body as JsonObject;
+    const error = item.error;
+    if (error && typeof error === "object") {
+      const nested = error as JsonObject;
+      if (typeof nested.message === "string") {
+        message = nested.message;
+      }
+    } else if (typeof error === "string") {
+      message = error;
+    }
+    if (!message && typeof item.message === "string") {
+      message = item.message;
+    }
+  } else if (typeof body === "string") {
+    message = body;
+  }
+
+  if (!message && result.bodyText) {
+    message = result.bodyText;
+  }
+
+  if (result.statusCode && message) {
+    return `${result.statusCode} ${message}`.trim();
+  }
+  if (result.statusCode) {
+    return `HTTP ${result.statusCode}`;
+  }
+  return message || "上游请求失败";
+}
+
 async function downloadBlob(path: string): Promise<Blob> {
   const { managementKey } = readManagementSettings();
   const headers = new Headers();
@@ -380,6 +483,11 @@ export const managementApi = {
 
   getConfig: () => request<JsonObject>("/config"),
   getLatestVersion: () => request<{ "latest-version"?: string }>("/latest-version"),
+  apiCall: <T = unknown>(payload: ApiCallRequest) =>
+    request<RawApiCallResponse>("/api-call", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }).then((response) => normalizeApiCallResponse<T>(response)),
   getYaml: () => request<string>("/config.yaml"),
   saveYaml: (yaml: string) =>
     request<{ ok?: boolean; changed?: string[] }>("/config.yaml", {
