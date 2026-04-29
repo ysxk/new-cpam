@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AuthFile,
   managementApi,
@@ -328,6 +328,35 @@ function realQuotaBadge(result: RealQuotaResult | undefined) {
   return <span className={`badge ${low ? "warn" : "ok"}`}>{low ? "低额度" : "已查询"}</span>;
 }
 
+function providerClassName(provider: string): string {
+  const normalized = provider.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  return normalized || "default";
+}
+
+function runtimeBadgeClass(status: string): "ok" | "warn" | "danger" {
+  const value = status.toLowerCase();
+  if (["disabled", "unavailable", "error"].includes(value)) {
+    return "danger";
+  }
+  if (["wait", "runtime", "usage-only"].includes(value)) {
+    return "warn";
+  }
+  return "ok";
+}
+
+function runtimeStatusLabel(status: string): string {
+  const labels: Record<string, string> = {
+    disabled: "已停用",
+    error: "异常",
+    ready: "就绪",
+    runtime: "运行时",
+    "usage-only": "仅统计",
+    unavailable: "不可用",
+    wait: "等待",
+  };
+  return labels[status.toLowerCase()] ?? status;
+}
+
 function renderRealQuota(result: RealQuotaResult | undefined) {
   if (!result) {
     return <div className="quota-inline-message">点击查询实际配额</div>;
@@ -403,7 +432,6 @@ export default function Quota() {
   const [realQuotaLoading, setRealQuotaLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const autoQuotaStartedRef = useRef(false);
 
   async function refreshOneRealQuota(file: AuthFile) {
     const key = quotaLookupKey(file);
@@ -468,10 +496,10 @@ export default function Quota() {
       }
       if (auths.status === "fulfilled") {
         setAuthFiles(auths.value);
-        if (!autoQuotaStartedRef.current) {
-          autoQuotaStartedRef.current = true;
-          void refreshAllRealQuotas(auths.value, false);
-        }
+        const validQuotaKeys = new Set(auths.value.map(quotaLookupKey));
+        setRealQuotas((prev) =>
+          Object.fromEntries(Object.entries(prev).filter(([key]) => validQuotaKeys.has(key))),
+        );
       }
       if (project.status === "fulfilled") {
         setSwitchProject(project.value);
@@ -597,8 +625,8 @@ export default function Quota() {
         </div>
       </div>
 
-      <section className="panel">
-        <div className="panel-header">
+      <section className="quota-section">
+        <div className="quota-section-header">
           <div>
             <h3 className="panel-title">
               <Icon name="shield" size={16} />
@@ -610,125 +638,126 @@ export default function Quota() {
           </div>
           <span className="badge">{accountRows.length} 个账号</span>
         </div>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>提供商</th>
-                <th>账号</th>
-                <th>配额</th>
-                <th>实际配额</th>
-                <th>运行状态</th>
-                <th>请求</th>
-                <th>失败</th>
-                <th>配额失败</th>
-                <th>Token</th>
-                <th>模型</th>
-                <th>最近命中</th>
-                <th>恢复时间</th>
-                <th>认证</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {accountRows.map((row) => {
-                const realQuota = realQuotas[row.fileKey];
-                const file = authFileByKey.get(row.fileKey);
-                return (
-                  <tr key={row.key}>
-                    <td>{row.provider}</td>
-                    <td>
-                      <div>{row.account}</div>
-                      <div className="faint mono">{row.fileName}</div>
-                      {row.reason && <div className="faint">{row.reason}</div>}
-                    </td>
-                    <td>
-                      <div className="quota-status-stack">
-                        <span className={`badge ${row.quotaClass}`}>{row.quotaStatus}</span>
-                        {realQuotaBadge(realQuota)}
-                      </div>
-                    </td>
-                    <td className="quota-cell">{renderRealQuota(realQuota)}</td>
-                    <td>{row.runtimeStatus}</td>
-                    <td>{formatNumber(row.requests)}</td>
-                    <td>{formatNumber(row.failed)}</td>
-                    <td>{formatNumber(row.quotaFailures)}</td>
-                    <td>{formatNumber(row.tokens, true)}</td>
-                    <td>{formatNumber(row.models)}</td>
-                    <td>{formatDate(row.lastSeen)}</td>
-                    <td>{formatDate(row.nextRecover)}</td>
-                    <td className="mono">{row.authIndex || "-"}</td>
-                    <td>
-                      {row.canQueryRealQuota && file ? (
-                        <button
-                          className="button subtle"
-                          disabled={realQuota?.status === "loading"}
-                          type="button"
-                          onClick={() => void refreshOneRealQuota(file)}
-                        >
-                          <Icon name="refresh" size={15} />
-                          查询
-                        </button>
-                      ) : (
-                        <span className="faint">-</span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-              {accountRows.length === 0 && (
-                <tr>
-                  <td colSpan={14}>
-                    <div className="empty-state">暂无账号。请先在认证文件或 OAuth 登录中添加账号。</div>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+
+        {accountRows.length === 0 ? (
+          <div className="empty-state">暂无账号。请先在认证文件或 OAuth 登录中添加账号。</div>
+        ) : (
+          <div className="quota-card-grid">
+            {accountRows.map((row) => {
+              const realQuota = realQuotas[row.fileKey];
+              const file = authFileByKey.get(row.fileKey);
+              return (
+                <article className={`quota-account-card ${row.quotaClass}`} key={row.key}>
+                  <div className="quota-card-top">
+                    <span className={`quota-provider ${providerClassName(row.provider)}`}>
+                      {row.provider}
+                    </span>
+                    <div className="quota-card-badges">
+                      <span className={`badge ${row.quotaClass}`}>{row.quotaStatus}</span>
+                      {realQuotaBadge(realQuota)}
+                    </div>
+                  </div>
+
+                  <div className="quota-card-title">
+                    <strong title={row.account}>{row.account}</strong>
+                    <span className="mono" title={row.fileName}>{row.fileName}</span>
+                  </div>
+
+                  {row.reason && <div className={`quota-card-message ${row.quotaClass}`}>{row.reason}</div>}
+
+                  <div className="quota-card-real">{renderRealQuota(realQuota)}</div>
+
+                  <div className="quota-card-stats">
+                    <div>
+                      <span>请求</span>
+                      <strong>{formatNumber(row.requests)}</strong>
+                    </div>
+                    <div>
+                      <span>失败</span>
+                      <strong>{formatNumber(row.failed)}</strong>
+                    </div>
+                    <div>
+                      <span>配额失败</span>
+                      <strong>{formatNumber(row.quotaFailures)}</strong>
+                    </div>
+                    <div>
+                      <span>Tokens</span>
+                      <strong>{formatNumber(row.tokens, true)}</strong>
+                    </div>
+                    <div>
+                      <span>模型</span>
+                      <strong>{formatNumber(row.models)}</strong>
+                    </div>
+                  </div>
+
+                  <div className="quota-card-meta">
+                    <div>
+                      <span>最近命中</span>
+                      <strong>{formatDate(row.lastSeen)}</strong>
+                    </div>
+                    <div>
+                      <span>恢复时间</span>
+                      <strong>{formatDate(row.nextRecover)}</strong>
+                    </div>
+                    <div>
+                      <span>认证</span>
+                      <strong className="mono">{row.authIndex || "-"}</strong>
+                    </div>
+                  </div>
+
+                  <div className="quota-card-footer">
+                    <span className={`badge ${runtimeBadgeClass(row.runtimeStatus)}`}>
+                      {runtimeStatusLabel(row.runtimeStatus)}
+                    </span>
+                    {row.canQueryRealQuota && file ? (
+                      <button
+                        className="button subtle"
+                        disabled={realQuota?.status === "loading"}
+                        type="button"
+                        onClick={() => void refreshOneRealQuota(file)}
+                      >
+                        <Icon name="refresh" size={15} />
+                        查询
+                      </button>
+                    ) : (
+                      <span className="faint">不支持查询</span>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
       </section>
 
-      <section className="panel">
-        <div className="panel-header">
+      <section className="quota-section">
+        <div className="quota-section-header">
           <h3 className="panel-title">
             <Icon name="logs" size={16} />
             疑似配额失败请求
           </h3>
           <span className="badge">{quotaFailures.length} 条</span>
         </div>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>时间</th>
-                <th>API</th>
-                <th>模型</th>
-                <th>命中账号</th>
-                <th>认证</th>
-                <th>错误</th>
-              </tr>
-            </thead>
-            <tbody>
-              {quotaFailures.map((row, index) => (
-                <tr key={`${row.timestamp}-${row.api}-${row.model}-${index}`}>
-                  <td>{formatDate(row.timestamp)}</td>
-                  <td className="mono">{row.api}</td>
-                  <td className="mono">{row.model}</td>
-                  <td>{row.source ?? "-"}</td>
-                  <td className="mono">{row.auth_index ?? "-"}</td>
-                  <td>{row.error ?? "-"}</td>
-                </tr>
-              ))}
-              {quotaFailures.length === 0 && (
-                <tr>
-                  <td colSpan={6}>
-                    <div className="empty-state">暂无疑似配额失败请求</div>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+        {quotaFailures.length === 0 ? (
+          <div className="empty-state">暂无疑似配额失败请求</div>
+        ) : (
+          <div className="quota-failure-list">
+            {quotaFailures.map((row, index) => (
+              <article className="quota-failure-card" key={`${row.timestamp}-${row.api}-${row.model}-${index}`}>
+                <div className="quota-failure-head">
+                  <strong className="mono">{row.model}</strong>
+                  <span>{formatDate(row.timestamp)}</span>
+                </div>
+                <div className="quota-failure-meta">
+                  <span className="mono">{row.api}</span>
+                  <span>{row.source ?? "-"}</span>
+                  <span className="mono">{row.auth_index ?? "-"}</span>
+                </div>
+                <p title={row.error ?? ""}>{row.error ?? "-"}</p>
+              </article>
+            ))}
+          </div>
+        )}
       </section>
     </div>
   );

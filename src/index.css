@@ -431,6 +431,7 @@ tbody tr:hover {
   gap: 14px;
   border: 1px solid var(--color-border);
   border-radius: 8px;
+  background: #fff;
   padding: 12px;
 }
 
@@ -923,6 +924,233 @@ tbody tr:hover {
   gap: 6px;
 }
 
+.quota-section {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.quota-section-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.quota-card-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(280px, 1fr));
+  gap: 14px;
+}
+
+.quota-account-card {
+  display: flex;
+  min-width: 0;
+  min-height: 370px;
+  flex-direction: column;
+  gap: 13px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: #fff;
+  padding: 15px;
+  box-shadow: 0 10px 26px rgba(20, 32, 51, 0.04);
+}
+
+.quota-account-card.ok {
+  box-shadow:
+    inset 3px 0 0 var(--color-teal),
+    0 10px 26px rgba(20, 32, 51, 0.04);
+}
+
+.quota-account-card.warn {
+  box-shadow:
+    inset 3px 0 0 #d69e2e,
+    0 10px 26px rgba(20, 32, 51, 0.04);
+}
+
+.quota-account-card.danger {
+  box-shadow:
+    inset 3px 0 0 var(--color-red),
+    0 10px 26px rgba(20, 32, 51, 0.04);
+}
+
+.quota-card-top,
+.quota-card-badges,
+.quota-card-footer,
+.quota-failure-head,
+.quota-failure-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.quota-card-top,
+.quota-card-footer,
+.quota-failure-head {
+  justify-content: space-between;
+}
+
+.quota-card-badges,
+.quota-failure-meta {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.quota-provider {
+  display: inline-flex;
+  align-items: center;
+  max-width: 54%;
+  min-height: 28px;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: #f8fafc;
+  color: var(--color-text);
+  padding: 5px 9px;
+  font-size: 12px;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quota-provider.claude {
+  border-color: #f1dfd0;
+  background: #fff7f2;
+  color: #8a4d22;
+}
+
+.quota-provider.codex,
+.quota-provider.openai {
+  border-color: #d6dde8;
+  background: #f8fafc;
+  color: #243247;
+}
+
+.quota-provider.gemini,
+.quota-provider.gemini-cli,
+.quota-provider.google,
+.quota-provider.vertex,
+.quota-provider.antigravity {
+  border-color: #dbe6fb;
+  background: #f8fbff;
+  color: #1d4ed8;
+}
+
+.quota-provider.kimi {
+  border-color: #d8dce5;
+  background: #fff;
+  color: #0b0f19;
+}
+
+.quota-card-title {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.quota-card-title strong,
+.quota-card-title span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quota-card-title strong {
+  color: var(--color-text);
+  font-size: 16px;
+}
+
+.quota-card-title span {
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.quota-card-message {
+  min-height: 38px;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-card-muted);
+  color: var(--color-muted);
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.quota-card-message.warn {
+  border-color: #efd49a;
+  background: var(--color-amber-soft);
+  color: var(--color-amber);
+}
+
+.quota-card-message.danger {
+  border-color: #f0b6b6;
+  background: var(--color-red-soft);
+  color: #9c2d2d;
+}
+
+.quota-card-real {
+  display: flex;
+  min-height: 96px;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.quota-card-stats,
+.quota-card-meta {
+  display: grid;
+  gap: 8px;
+}
+
+.quota-card-stats {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.quota-card-meta {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: auto;
+}
+
+.quota-card-stats div,
+.quota-card-meta div {
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-card-muted);
+  padding: 8px;
+}
+
+.quota-card-stats span,
+.quota-card-stats strong,
+.quota-card-meta span,
+.quota-card-meta strong {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quota-card-stats span,
+.quota-card-meta span {
+  color: var(--color-faint);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.quota-card-stats strong,
+.quota-card-meta strong {
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+.quota-card-footer .button {
+  min-height: 34px;
+}
+
 .quota-cell {
   min-width: 280px;
   max-width: 420px;
@@ -1046,6 +1274,61 @@ tbody tr:hover {
   font-size: 11px;
 }
 
+.quota-failure-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(280px, 1fr));
+  gap: 10px;
+}
+
+.quota-failure-card {
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: #fff;
+  padding: 12px;
+}
+
+.quota-failure-head strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quota-failure-head span {
+  flex: 0 0 auto;
+  color: var(--color-faint);
+  font-size: 12px;
+}
+
+.quota-failure-meta {
+  justify-content: flex-start;
+  margin-top: 8px;
+}
+
+.quota-failure-meta span {
+  max-width: 100%;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #eef3f8;
+  color: var(--color-muted);
+  padding: 3px 8px;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quota-failure-card p {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 9px 0 0;
+  color: var(--color-muted);
+  font-size: 12px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
 @media (max-width: 1180px) {
   .grid.four,
   .grid.three,
@@ -1058,6 +1341,11 @@ tbody tr:hover {
   }
 
   .auth-card-grid {
+    grid-template-columns: repeat(2, minmax(260px, 1fr));
+  }
+
+  .quota-card-grid,
+  .quota-failure-list {
     grid-template-columns: repeat(2, minmax(260px, 1fr));
   }
 
@@ -1100,7 +1388,11 @@ tbody tr:hover {
   }
 
   .auth-card-grid,
-  .auth-card-meta {
+  .auth-card-meta,
+  .quota-card-grid,
+  .quota-card-stats,
+  .quota-card-meta,
+  .quota-failure-list {
     grid-template-columns: 1fr;
   }
 
