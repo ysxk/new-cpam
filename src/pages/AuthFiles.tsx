@@ -124,6 +124,29 @@ function accountLabel(file: AuthFile): string {
   return file.email ?? file.account ?? file.label ?? "-";
 }
 
+function planLabel(file: AuthFile): string {
+  const rawPlan = file.plan ?? file.plan_type ?? file.planType;
+  const plan = rawPlan?.trim();
+  if (!plan) {
+    return "-";
+  }
+
+  const labels: Record<string, string> = {
+    enterprise: "Enterprise",
+    free: "Free",
+    max: "Max",
+    plan_enterprise: "Enterprise",
+    plan_free: "Free",
+    plan_max: "Max",
+    plan_pro: "Pro",
+    plan_team: "Team",
+    pro: "Pro",
+    team: "Team",
+  };
+
+  return labels[plan.toLowerCase()] ?? plan;
+}
+
 function matchesSearch(file: AuthFile, query: string): boolean {
   const text = [
     file.name,
@@ -366,8 +389,8 @@ export default function AuthFiles() {
 
                   <div className="auth-card-meta">
                     <div>
-                      <span>来源</span>
-                      <strong>{file.source ?? (file.runtime_only ? "memory" : "file")}</strong>
+                      <span>套餐</span>
+                      <strong>{planLabel(file)}</strong>
                     </div>
                     <div>
                       <span>大小</span>

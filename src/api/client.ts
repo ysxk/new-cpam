@@ -105,6 +105,7 @@ export interface AuthFile {
   account_type?: string;
   account?: string;
   id_token?: JsonObject | string;
+  plan?: string;
   plan_type?: string;
   planType?: string;
   metadata?: JsonObject;
