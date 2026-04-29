@@ -522,6 +522,111 @@ tbody tr:hover {
   padding: 16px;
 }
 
+.auth-provider-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.modal-backdrop {
+  position: fixed;
+  z-index: 60;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(20, 32, 51, 0.38);
+  padding: 22px;
+}
+
+.modal-panel {
+  width: min(720px, 100%);
+  max-height: calc(100vh - 44px);
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: var(--shadow-panel);
+}
+
+.modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  border-bottom: 1px solid var(--color-border);
+  padding: 16px;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 18px;
+  letter-spacing: 0;
+}
+
+.auth-modal .form-stack {
+  padding: 16px;
+}
+
+.oauth-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-card-muted);
+  padding: 12px 16px;
+}
+
+.oauth-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--color-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.oauth-step span {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #d8e1ee;
+  color: #4d5f78;
+}
+
+.oauth-step.active span {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.oauth-step.done span {
+  background: var(--color-teal);
+  color: #fff;
+}
+
+.compact-textarea {
+  min-height: 74px;
+}
+
+.callback-textarea {
+  min-height: 108px;
+}
+
+.modal-status-row,
+.modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.modal-actions {
+  justify-content: flex-end;
+}
+
 @media (max-width: 1180px) {
   .grid.four,
   .grid.three,
@@ -556,5 +661,15 @@ tbody tr:hover {
     grid-template-columns: repeat(24, minmax(4px, 1fr));
     gap: 2px;
     height: 140px;
+  }
+
+  .auth-provider-grid,
+  .oauth-steps {
+    grid-template-columns: 1fr;
+  }
+
+  .modal-backdrop {
+    align-items: stretch;
+    padding: 12px;
   }
 }

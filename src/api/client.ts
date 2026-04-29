@@ -118,6 +118,8 @@ export interface ErrorLogFile {
   modified?: number;
 }
 
+export type OAuthProvider = "anthropic" | "codex" | "gemini-cli" | "antigravity" | "kimi";
+
 export interface OAuthUrlResponse {
   status?: string;
   url?: string;
@@ -422,7 +424,7 @@ export const managementApi = {
     return request<VertexImportResponse>("/vertex/import", { method: "POST", body: form });
   },
 
-  startOAuth: (provider: "anthropic" | "codex" | "gemini-cli" | "antigravity", projectId = "") => {
+  startOAuth: (provider: OAuthProvider, projectId = "") => {
     const params = new URLSearchParams({ is_webui: "true" });
     if (provider === "gemini-cli" && projectId.trim()) {
       params.set("project_id", projectId.trim());
@@ -431,6 +433,15 @@ export const managementApi = {
   },
   pollOAuthStatus: (state: string) =>
     request<OAuthStatusResponse>(`/get-auth-status?state=${encodeQuery(state)}`),
+  submitOAuthCallback: (provider: string, state: string, redirectUrl: string) =>
+    request<{ status?: string; error?: string }>("/oauth-callback", {
+      method: "POST",
+      body: JSON.stringify({
+        provider,
+        state,
+        redirect_url: redirectUrl,
+      }),
+    }),
 
   getLogs: (after?: number) =>
     request<LogResponse>(after ? `/logs?after=${after}` : "/logs"),
