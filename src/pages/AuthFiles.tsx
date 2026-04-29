@@ -25,6 +25,15 @@ type ProviderTone =
 
 type BrandIcon = string;
 
+interface AuthFileEditForm {
+  name: string;
+  prefix: string;
+  proxyUrl: string;
+  headers: string;
+  priority: string;
+  note: string;
+}
+
 const providerIcons: Partial<Record<ProviderTone, BrandIcon>> = {
   antigravity: antigravityIcon,
   claude: claudeIcon,
@@ -35,6 +44,110 @@ const providerIcons: Partial<Record<ProviderTone, BrandIcon>> = {
   openai: openaiIcon,
   vertex: vertexIcon,
 };
+
+const emptyEditForm: AuthFileEditForm = {
+  name: "",
+  prefix: "",
+  proxyUrl: "",
+  headers: "",
+  priority: "0",
+  note: "",
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function stringValue(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+  return "";
+}
+
+function numberValue(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}
+
+function fieldFromAuth(file: AuthFile, key: string): unknown {
+  const raw = file as unknown as Record<string, unknown>;
+  const metadata = isRecord(file.metadata) ? file.metadata : {};
+  const attributes = isRecord(file.attributes) ? file.attributes : {};
+  return raw[key] ?? metadata[key] ?? attributes[key];
+}
+
+function authPrefix(file: AuthFile): string {
+  return stringValue(fieldFromAuth(file, "prefix"));
+}
+
+function authProxyUrl(file: AuthFile): string {
+  return stringValue(file.proxy_url ?? file.proxyUrl ?? fieldFromAuth(file, "proxy_url") ?? fieldFromAuth(file, "proxyUrl"));
+}
+
+function authPriority(file: AuthFile): number {
+  return numberValue(file.priority ?? fieldFromAuth(file, "priority"));
+}
+
+function authNote(file: AuthFile): string {
+  return stringValue(file.note ?? fieldFromAuth(file, "note"));
+}
+
+function authHeaders(file: AuthFile): Record<string, string> {
+  const headers: Record<string, string> = {};
+  const metadata = isRecord(file.metadata) ? file.metadata : {};
+  const metadataHeaders = metadata.headers;
+  if (isRecord(metadataHeaders)) {
+    Object.entries(metadataHeaders).forEach(([key, value]) => {
+      const text = stringValue(value).trim();
+      if (key.trim() && text) {
+        headers[key.trim()] = text;
+      }
+    });
+  }
+  const attributes = isRecord(file.attributes) ? file.attributes : {};
+  Object.entries(attributes).forEach(([key, value]) => {
+    if (!key.startsWith("header:")) {
+      return;
+    }
+    const name = key.slice("header:".length).trim();
+    const text = stringValue(value).trim();
+    if (name && text) {
+      headers[name] = text;
+    }
+  });
+  return headers;
+}
+
+function headersToText(headers: Record<string, string>): string {
+  return Object.entries(headers)
+    .map(([key, value]) => `${key}: ${value}`)
+    .join("\n");
+}
+
+function textToHeaders(value: string): Record<string, string> {
+  return Object.fromEntries(
+    value
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const separator = line.includes(":") ? ":" : "=";
+        const [key, ...rest] = line.split(separator);
+        return [key.trim(), rest.join(separator).trim()] as const;
+      })
+      .filter(([key, entryValue]) => key && entryValue),
+  );
+}
 
 function statusKind(file: AuthFile): Exclude<StatusFilter, "all"> {
   if (file.disabled || file.unavailable || file.status === "error") {
@@ -139,14 +252,6 @@ function objectValue(value: unknown): Record<string, unknown> | null {
   return null;
 }
 
-function stringValue(value: unknown): string | null {
-  if (typeof value !== "string") {
-    return null;
-  }
-  const trimmed = value.trim();
-  return trimmed || null;
-}
-
 function planLabel(file: AuthFile): string {
   const idToken = objectValue(file.id_token);
   const metadata = objectValue(file.metadata);
@@ -233,6 +338,8 @@ export default function AuthFiles() {
   const [query, setQuery] = useState("");
   const [providerFilter, setProviderFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [editForm, setEditForm] = useState<AuthFileEditForm>(emptyEditForm);
+  const [editingFile, setEditingFile] = useState<AuthFile | null>(null);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -298,6 +405,54 @@ export default function AuthFiles() {
     }
     const result = await managementApi.deleteAllAuthFiles();
     setMessage(`已删除 ${result.deleted ?? 0} 个文件`);
+    await loadFiles();
+  }
+
+  function openEditFields(file: AuthFile) {
+    setEditingFile(file);
+    setEditForm({
+      name: file.id ?? file.name,
+      prefix: authPrefix(file),
+      proxyUrl: authProxyUrl(file),
+      headers: headersToText(authHeaders(file)),
+      priority: String(authPriority(file)),
+      note: authNote(file),
+    });
+    setError("");
+  }
+
+  function closeEditFields() {
+    setEditingFile(null);
+    setEditForm(emptyEditForm);
+  }
+
+  async function saveEditFields() {
+    if (!editForm.name.trim()) {
+      return;
+    }
+    const existingHeaders = editingFile ? authHeaders(editingFile) : {};
+    const nextHeaders = textToHeaders(editForm.headers);
+    const headerPatch =
+      editForm.headers.trim() || Object.keys(existingHeaders).length === 0
+        ? nextHeaders
+        : Object.fromEntries(Object.keys(existingHeaders).map((key) => [key, ""]));
+    await managementApi.patchAuthFileFields({
+      name: editForm.name.trim(),
+      prefix: editForm.prefix.trim(),
+      proxy_url: editForm.proxyUrl.trim(),
+      headers: headerPatch,
+      priority: Number(editForm.priority) || 0,
+      note: editForm.note.trim(),
+    });
+    setMessage("认证文件字段已保存");
+    closeEditFields();
+    await loadFiles();
+  }
+
+  async function toggleDisabled(file: AuthFile) {
+    const nextDisabled = !(file.disabled || file.status === "disabled");
+    await managementApi.patchAuthFileStatus(file.id ?? file.name, nextDisabled);
+    setMessage(nextDisabled ? "认证文件已禁用" : "认证文件已启用");
     await loadFiles();
   }
 
@@ -416,6 +571,9 @@ export default function AuthFiles() {
           <div className="auth-card-grid">
             {filteredFiles.map((file) => {
               const canUseFileActions = !file.runtime_only && file.source !== "memory";
+              const note = authNote(file);
+              const prefix = authPrefix(file);
+              const priority = authPriority(file);
               return (
                 <article className={`auth-file-card ${statusKind(file)}`} key={file.id ?? file.name}>
                   <div className="auth-card-top">
@@ -430,9 +588,12 @@ export default function AuthFiles() {
                   <div className="auth-account-line">
                     <span>{accountLabel(file)}</span>
                     {file.label && <span className="tag">{file.label}</span>}
+                    {prefix && <span className="tag">prefix: {prefix}</span>}
+                    {priority !== 0 && <span className="tag">P{priority}</span>}
                   </div>
 
                   {file.status_message && <div className="auth-card-message">{file.status_message}</div>}
+                  {!file.status_message && note && <div className="auth-card-message">{note}</div>}
 
                   <div className="auth-card-meta">
                     <div>
@@ -450,6 +611,23 @@ export default function AuthFiles() {
                   </div>
 
                   <div className="auth-card-actions">
+                    <button
+                      className="button subtle"
+                      disabled={!canUseFileActions}
+                      type="button"
+                      onClick={() => openEditFields(file)}
+                    >
+                      <Icon name="edit" size={16} />
+                      编辑
+                    </button>
+                    <button
+                      className={file.disabled || file.status === "disabled" ? "button" : "button subtle"}
+                      type="button"
+                      onClick={() => toggleDisabled(file)}
+                    >
+                      <Icon name="shield" size={16} />
+                      {file.disabled || file.status === "disabled" ? "启用" : "禁用"}
+                    </button>
                     <button
                       className="button subtle"
                       disabled={!canUseFileActions}
@@ -474,7 +652,7 @@ export default function AuthFiles() {
             })}
           </div>
 
-          {filteredFiles.length === 0 && (
+      {filteredFiles.length === 0 && (
             <div className="empty-state">没有匹配的认证文件</div>
           )}
         </div>
@@ -508,6 +686,80 @@ export default function AuthFiles() {
           </div>
         </aside>
       </div>
+
+      {editingFile && (
+        <div className="modal-backdrop" role="presentation">
+          <div className="modal-panel provider-modal" role="dialog" aria-modal="true" aria-labelledby="auth-fields-modal-title">
+            <div className="modal-header">
+              <div>
+                <h3 id="auth-fields-modal-title">编辑认证文件字段</h3>
+                <p className="panel-subtitle">
+                  <span className="mono">{editingFile.name}</span>
+                </p>
+              </div>
+              <button className="icon-button" title="关闭" type="button" onClick={closeEditFields}>
+                <Icon name="x" />
+              </button>
+            </div>
+            <div className="modal-body form-stack">
+              <div className="field-row">
+                <div className="field">
+                  <label htmlFor="auth-edit-prefix">prefix</label>
+                  <input
+                    id="auth-edit-prefix"
+                    value={editForm.prefix}
+                    onChange={(event) => setEditForm({ ...editForm, prefix: event.target.value })}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="auth-edit-priority">priority</label>
+                  <input
+                    id="auth-edit-priority"
+                    type="number"
+                    value={editForm.priority}
+                    onChange={(event) => setEditForm({ ...editForm, priority: event.target.value })}
+                  />
+                </div>
+              </div>
+              <div className="field">
+                <label htmlFor="auth-edit-proxy">proxy_url</label>
+                <input
+                  id="auth-edit-proxy"
+                  placeholder="direct / none / socks5://..."
+                  value={editForm.proxyUrl}
+                  onChange={(event) => setEditForm({ ...editForm, proxyUrl: event.target.value })}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="auth-edit-headers">Headers，每行 Key: Value</label>
+                <textarea
+                  id="auth-edit-headers"
+                  value={editForm.headers}
+                  onChange={(event) => setEditForm({ ...editForm, headers: event.target.value })}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="auth-edit-note">note</label>
+                <textarea
+                  id="auth-edit-note"
+                  className="compact-textarea"
+                  value={editForm.note}
+                  onChange={(event) => setEditForm({ ...editForm, note: event.target.value })}
+                />
+              </div>
+              <div className="modal-actions">
+                <button className="button subtle" type="button" onClick={closeEditFields}>
+                  取消
+                </button>
+                <button className="button primary" type="button" onClick={saveEditFields}>
+                  <Icon name="save" size={16} />
+                  保存
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

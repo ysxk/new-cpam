@@ -10,9 +10,13 @@ interface SettingsState {
   wsAuth: boolean;
   switchProject: boolean;
   switchPreviewModel: boolean;
+  forceModelPrefix: boolean;
   proxyUrl: string;
   requestRetry: number;
   maxRetryInterval: number;
+  logsMaxTotalSizeMb: number;
+  errorLogsMaxFiles: number;
+  routingStrategy: string;
   latestVersion: string;
 }
 
@@ -24,9 +28,13 @@ const emptySettings: SettingsState = {
   wsAuth: false,
   switchProject: false,
   switchPreviewModel: false,
+  forceModelPrefix: false,
   proxyUrl: "",
   requestRetry: 0,
   maxRetryInterval: 0,
+  logsMaxTotalSizeMb: 0,
+  errorLogsMaxFiles: 0,
+  routingStrategy: "round-robin",
   latestVersion: "-",
 };
 
@@ -48,9 +56,13 @@ export default function Settings() {
         wsAuth,
         switchProject,
         switchPreviewModel,
+        forceModelPrefix,
         proxyUrl,
         requestRetry,
         maxRetryInterval,
+        logsMaxTotalSizeMb,
+        errorLogsMaxFiles,
+        routingStrategy,
         latestVersion,
       ] = await Promise.all([
         managementApi.getBooleanSetting("/debug", "debug"),
@@ -63,9 +75,13 @@ export default function Settings() {
           "/quota-exceeded/switch-preview-model",
           "switch-preview-model",
         ),
+        managementApi.getBooleanSetting("/force-model-prefix", "force-model-prefix"),
         managementApi.getProxyUrl(),
         managementApi.getNumberSetting("/request-retry", "request-retry"),
         managementApi.getNumberSetting("/max-retry-interval", "max-retry-interval"),
+        managementApi.getNumberSetting("/logs-max-total-size-mb", "logs-max-total-size-mb"),
+        managementApi.getNumberSetting("/error-logs-max-files", "error-logs-max-files"),
+        managementApi.getRoutingStrategy(),
         managementApi.getLatestVersion(),
       ]);
       setSettings({
@@ -76,9 +92,13 @@ export default function Settings() {
         wsAuth,
         switchProject,
         switchPreviewModel,
+        forceModelPrefix,
         proxyUrl,
         requestRetry,
         maxRetryInterval,
+        logsMaxTotalSizeMb,
+        errorLogsMaxFiles,
+        routingStrategy,
         latestVersion: latestVersion["latest-version"] ?? "-",
       });
     } catch (loadError) {
@@ -105,9 +125,18 @@ export default function Settings() {
     setMessage("设置已保存");
   }
 
-  async function saveNumber(path: string, key: "requestRetry" | "maxRetryInterval") {
+  async function saveNumber(
+    path: string,
+    key: "requestRetry" | "maxRetryInterval" | "logsMaxTotalSizeMb" | "errorLogsMaxFiles",
+  ) {
     await managementApi.setValue(path, Number(settings[key]));
     setMessage("数值设置已保存");
+  }
+
+  async function saveRoutingStrategy() {
+    await managementApi.putRoutingStrategy(settings.routingStrategy);
+    setMessage("路由策略已保存");
+    await loadSettings();
   }
 
   async function saveProxyUrl() {
@@ -205,6 +234,14 @@ export default function Settings() {
               label="WebSocket 认证"
               note="开启时会断开已有 WebSocket 会话"
               onClick={() => toggleSetting("wsAuth", "/ws-auth", !settings.wsAuth)}
+            />
+            <ToggleRow
+              active={settings.forceModelPrefix}
+              label="强制模型前缀"
+              note="只使用带 prefix 的凭证匹配无前缀请求"
+              onClick={() =>
+                toggleSetting("forceModelPrefix", "/force-model-prefix", !settings.forceModelPrefix)
+              }
             />
           </div>
         </section>
@@ -308,6 +345,81 @@ export default function Settings() {
               保存
             </button>
           </div>
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <h3 className="panel-title">
+            <Icon name="logs" size={16} />
+            日志保留
+          </h3>
+        </div>
+        <div className="panel-body grid two">
+          <div className="field">
+            <label htmlFor="logs-max-total-size-mb">logs-max-total-size-mb</label>
+            <input
+              id="logs-max-total-size-mb"
+              min={0}
+              type="number"
+              value={settings.logsMaxTotalSizeMb}
+              onChange={(event) =>
+                setSettings((items) => ({
+                  ...items,
+                  logsMaxTotalSizeMb: Number(event.target.value),
+                }))
+              }
+            />
+            <button className="button subtle" type="button" onClick={() => saveNumber("/logs-max-total-size-mb", "logsMaxTotalSizeMb")}>
+              保存
+            </button>
+          </div>
+          <div className="field">
+            <label htmlFor="error-logs-max-files">error-logs-max-files</label>
+            <input
+              id="error-logs-max-files"
+              min={0}
+              type="number"
+              value={settings.errorLogsMaxFiles}
+              onChange={(event) =>
+                setSettings((items) => ({
+                  ...items,
+                  errorLogsMaxFiles: Number(event.target.value),
+                }))
+              }
+            />
+            <button className="button subtle" type="button" onClick={() => saveNumber("/error-logs-max-files", "errorLogsMaxFiles")}>
+              保存
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <h3 className="panel-title">
+            <Icon name="layers" size={16} />
+            路由策略
+          </h3>
+        </div>
+        <div className="panel-body form-stack">
+          <div className="field">
+            <label htmlFor="routing-strategy">routing/strategy</label>
+            <select
+              id="routing-strategy"
+              value={settings.routingStrategy}
+              onChange={(event) =>
+                setSettings((items) => ({ ...items, routingStrategy: event.target.value }))
+              }
+            >
+              <option value="round-robin">round-robin</option>
+              <option value="fill-first">fill-first</option>
+            </select>
+          </div>
+          <button className="button primary" type="button" onClick={saveRoutingStrategy}>
+            <Icon name="save" size={16} />
+            保存路由策略
+          </button>
         </div>
       </section>
     </div>

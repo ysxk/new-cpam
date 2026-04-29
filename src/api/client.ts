@@ -61,19 +61,29 @@ export interface UsageImportResponse {
 export interface ModelAlias {
   name: string;
   alias?: string;
+  fork?: boolean;
+  thinking?: JsonObject;
 }
 
 export interface ProviderApiKeyEntry {
   "api-key": string;
+  prefix?: string;
+  priority?: number;
   "base-url"?: string;
   "proxy-url"?: string;
   headers?: Record<string, string>;
   "excluded-models"?: string[];
   models?: ModelAlias[];
+  websockets?: boolean;
+  cloak?: JsonObject;
+  "experimental-cch-signing"?: boolean;
 }
 
 export interface OpenAICompatibilityProvider {
   name: string;
+  disabled?: boolean;
+  prefix?: string;
+  priority?: number;
   "base-url": string;
   "api-key-entries": Array<{
     "api-key": string;
@@ -99,6 +109,11 @@ export interface AuthFile {
   runtimeOnly?: boolean | string;
   source?: string;
   path?: string;
+  prefix?: string;
+  proxy_url?: string;
+  proxyUrl?: string;
+  priority?: number;
+  note?: string;
   size?: number;
   modtime?: string;
   email?: string;
@@ -119,6 +134,15 @@ export interface AuthFile {
   quota?: AuthQuotaState;
   last_error?: AuthErrorState;
   model_states?: Record<string, AuthModelState>;
+}
+
+export interface ModelDefinition {
+  [key: string]: unknown;
+  id?: string;
+  name?: string;
+  display_name?: string;
+  type?: string;
+  owned_by?: string;
 }
 
 export interface AuthQuotaState {
@@ -176,6 +200,32 @@ export interface VertexImportResponse {
   project_id?: string;
   email?: string;
   location?: string;
+}
+
+export interface OAuthModelAliasEntry {
+  name: string;
+  alias: string;
+  fork?: boolean;
+}
+
+export interface AmpModelMapping {
+  from: string;
+  to: string;
+  regex?: boolean;
+}
+
+export interface AmpUpstreamApiKeyEntry {
+  "upstream-api-key": string;
+  "api-keys": string[];
+}
+
+export interface AmpCodeConfig {
+  "upstream-url"?: string;
+  "upstream-api-key"?: string;
+  "upstream-api-keys"?: AmpUpstreamApiKeyEntry[];
+  "restrict-management-to-localhost"?: boolean;
+  "model-mappings"?: AmpModelMapping[];
+  "force-model-mappings"?: boolean;
 }
 
 export interface ApiCallRequest {
@@ -542,8 +592,27 @@ export const managementApi = {
     request<{ status?: string }>(`/oauth-excluded-models?provider=${encodeQuery(provider)}`, {
       method: "DELETE",
     }),
+  getOAuthModelAlias: () =>
+    request<{ "oauth-model-alias"?: Record<string, OAuthModelAliasEntry[]> }>(
+      "/oauth-model-alias",
+    ).then((data) => data["oauth-model-alias"] ?? {}),
+  putOAuthModelAlias: (items: Record<string, OAuthModelAliasEntry[]>) =>
+    request<{ status?: string }>("/oauth-model-alias", {
+      method: "PUT",
+      body: JSON.stringify(items),
+    }),
+  deleteOAuthModelAliasChannel: (channel: string) =>
+    request<{ status?: string }>(`/oauth-model-alias?channel=${encodeQuery(channel)}`, {
+      method: "DELETE",
+    }),
 
   getAuthFiles: () => request<{ files?: AuthFile[] }>("/auth-files").then((data) => data.files ?? []),
+  getAuthFileModels: (name: string) =>
+    request<{ models?: ModelDefinition[] }>(`/auth-files/models?name=${encodeQuery(name)}`).then(
+      (data) => data.models ?? [],
+    ),
+  getModelDefinitions: (channel: string) =>
+    request<{ channel?: string; models?: ModelDefinition[] }>(`/model-definitions/${encodeQuery(channel)}`),
   uploadAuthFile: (file: File, name?: string) => {
     const form = new FormData();
     form.append("file", file, name || file.name);
@@ -554,6 +623,23 @@ export const managementApi = {
   deleteAllAuthFiles: () =>
     request<{ status?: string; deleted?: number }>("/auth-files?all=true", { method: "DELETE" }),
   downloadAuthFile: (name: string) => downloadBlob(`/auth-files/download?name=${encodeQuery(name)}`),
+  patchAuthFileStatus: (name: string, disabled: boolean) =>
+    request<{ status?: string; disabled?: boolean }>("/auth-files/status", {
+      method: "PATCH",
+      body: JSON.stringify({ name, disabled }),
+    }),
+  patchAuthFileFields: (payload: {
+    name: string;
+    prefix?: string;
+    proxy_url?: string;
+    headers?: Record<string, string>;
+    priority?: number;
+    note?: string;
+  }) =>
+    request<{ status?: string }>("/auth-files/fields", {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
   importVertex: (file: File, location: string) => {
     const form = new FormData();
     form.append("file", file, file.name);
@@ -600,4 +686,50 @@ export const managementApi = {
   getErrorLogs: () =>
     request<{ files?: ErrorLogFile[] }>("/request-error-logs").then((data) => data.files ?? []),
   downloadErrorLog: (name: string) => downloadBlob(`/request-error-logs/${encodeQuery(name)}`),
+  downloadRequestLogById: (id: string) => downloadBlob(`/request-log-by-id/${encodeQuery(id)}`),
+
+  getAmpCode: () =>
+    request<{ ampcode?: AmpCodeConfig }>("/ampcode").then((data) => data.ampcode ?? {}),
+  putAmpUpstreamUrl: (value: string) =>
+    request<{ status?: string }>("/ampcode/upstream-url", {
+      method: "PUT",
+      body: withValue(value),
+    }),
+  deleteAmpUpstreamUrl: () =>
+    request<{ status?: string }>("/ampcode/upstream-url", { method: "DELETE" }),
+  putAmpUpstreamApiKey: (value: string) =>
+    request<{ status?: string }>("/ampcode/upstream-api-key", {
+      method: "PUT",
+      body: withValue(value),
+    }),
+  deleteAmpUpstreamApiKey: () =>
+    request<{ status?: string }>("/ampcode/upstream-api-key", { method: "DELETE" }),
+  putAmpRestrictManagement: (value: boolean) =>
+    request<{ status?: string }>("/ampcode/restrict-management-to-localhost", {
+      method: "PUT",
+      body: withValue(value),
+    }),
+  putAmpForceModelMappings: (value: boolean) =>
+    request<{ status?: string }>("/ampcode/force-model-mappings", {
+      method: "PUT",
+      body: withValue(value),
+    }),
+  putAmpModelMappings: (items: AmpModelMapping[]) =>
+    request<{ status?: string }>("/ampcode/model-mappings", {
+      method: "PUT",
+      body: JSON.stringify({ value: items }),
+    }),
+  putAmpUpstreamApiKeys: (items: AmpUpstreamApiKeyEntry[]) =>
+    request<{ status?: string }>("/ampcode/upstream-api-keys", {
+      method: "PUT",
+      body: JSON.stringify({ value: items }),
+    }),
+
+  getRoutingStrategy: () =>
+    request<{ strategy?: string }>("/routing/strategy").then((data) => data.strategy ?? "round-robin"),
+  putRoutingStrategy: (value: string) =>
+    request<{ status?: string }>("/routing/strategy", {
+      method: "PUT",
+      body: withValue(value),
+    }),
 };

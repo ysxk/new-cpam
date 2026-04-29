@@ -8,7 +8,7 @@ import {
 import Icon from "../components/Icon";
 import { maskSecret, objectSize, splitLines, uniqueClean } from "../utils/format";
 
-type ProviderKind = "gemini" | "claude" | "codex";
+type ProviderKind = "gemini" | "claude" | "codex" | "vertex";
 type TabKey = ProviderKind | "openai";
 
 interface ProviderConfig {
@@ -20,15 +20,21 @@ interface ProviderConfig {
 
 interface KeyProviderForm {
   apiKey: string;
+  prefix: string;
+  priority: string;
   baseUrl: string;
   proxyUrl: string;
   headers: string;
   excludedModels: string;
   models: string;
+  websockets: boolean;
 }
 
 interface OpenAIProviderForm {
   name: string;
+  disabled: boolean;
+  prefix: string;
+  priority: string;
   baseUrl: string;
   keyEntries: string;
   headers: string;
@@ -54,19 +60,31 @@ const providerConfigs: Record<ProviderKind, ProviderConfig> = {
     key: "codex-api-key",
     baseUrlRequired: true,
   },
+  vertex: {
+    label: "Vertex",
+    path: "/vertex-api-key",
+    key: "vertex-api-key",
+    baseUrlRequired: false,
+  },
 };
 
 const emptyKeyForm: KeyProviderForm = {
   apiKey: "",
+  prefix: "",
+  priority: "0",
   baseUrl: "",
   proxyUrl: "",
   headers: "",
   excludedModels: "",
   models: "",
+  websockets: false,
 };
 
 const emptyOpenAIForm: OpenAIProviderForm = {
   name: "",
+  disabled: false,
+  prefix: "",
+  priority: "0",
   baseUrl: "",
   keyEntries: "",
   headers: "",
@@ -118,6 +136,13 @@ function formToKeyEntry(form: KeyProviderForm): ProviderApiKeyEntry {
   const item: ProviderApiKeyEntry = {
     "api-key": form.apiKey.trim(),
   };
+  if (form.prefix.trim()) {
+    item.prefix = form.prefix.trim();
+  }
+  const priority = Number(form.priority);
+  if (Number.isFinite(priority) && priority !== 0) {
+    item.priority = priority;
+  }
   if (form.baseUrl.trim()) {
     item["base-url"] = form.baseUrl.trim();
   }
@@ -136,17 +161,23 @@ function formToKeyEntry(form: KeyProviderForm): ProviderApiKeyEntry {
   if (models) {
     item.models = models;
   }
+  if (form.websockets) {
+    item.websockets = true;
+  }
   return item;
 }
 
 function keyEntryToForm(entry: ProviderApiKeyEntry): KeyProviderForm {
   return {
     apiKey: entry["api-key"] ?? "",
+    prefix: entry.prefix ?? "",
+    priority: String(entry.priority ?? 0),
     baseUrl: entry["base-url"] ?? "",
     proxyUrl: entry["proxy-url"] ?? "",
     headers: headersToText(entry.headers),
     excludedModels: (entry["excluded-models"] ?? []).join("\n"),
     models: modelsToText(entry.models),
+    websockets: Boolean(entry.websockets),
   };
 }
 
@@ -166,6 +197,16 @@ function formToOpenAIProvider(form: OpenAIProviderForm): OpenAICompatibilityProv
     "base-url": form.baseUrl.trim(),
     "api-key-entries": keyEntries,
   };
+  if (form.disabled) {
+    item.disabled = true;
+  }
+  if (form.prefix.trim()) {
+    item.prefix = form.prefix.trim();
+  }
+  const priority = Number(form.priority);
+  if (Number.isFinite(priority) && priority !== 0) {
+    item.priority = priority;
+  }
   const headers = textToHeaders(form.headers);
   const models = textToModels(form.models);
   if (headers) {
@@ -180,6 +221,9 @@ function formToOpenAIProvider(form: OpenAIProviderForm): OpenAICompatibilityProv
 function openAIProviderToForm(provider: OpenAICompatibilityProvider): OpenAIProviderForm {
   return {
     name: provider.name ?? "",
+    disabled: Boolean(provider.disabled),
+    prefix: provider.prefix ?? "",
+    priority: String(provider.priority ?? 0),
     baseUrl: provider["base-url"] ?? "",
     keyEntries: (provider["api-key-entries"] ?? [])
       .map((entry) => `${entry["api-key"]}${entry["proxy-url"] ? ` | ${entry["proxy-url"]}` : ""}`)
@@ -194,6 +238,7 @@ export default function Providers() {
   const [gemini, setGemini] = useState<ProviderApiKeyEntry[]>([]);
   const [claude, setClaude] = useState<ProviderApiKeyEntry[]>([]);
   const [codex, setCodex] = useState<ProviderApiKeyEntry[]>([]);
+  const [vertex, setVertex] = useState<ProviderApiKeyEntry[]>([]);
   const [openai, setOpenai] = useState<OpenAICompatibilityProvider[]>([]);
   const [keyForm, setKeyForm] = useState<KeyProviderForm>(emptyKeyForm);
   const [openaiForm, setOpenaiForm] = useState<OpenAIProviderForm>(emptyOpenAIForm);
@@ -208,7 +253,7 @@ export default function Providers() {
     setLoading(true);
     setError("");
     try {
-      const [geminiItems, claudeItems, codexItems, openaiItems] = await Promise.all([
+      const [geminiItems, claudeItems, codexItems, vertexItems, openaiItems] = await Promise.all([
         managementApi.getProviderList<ProviderApiKeyEntry>(
           providerConfigs.gemini.path,
           providerConfigs.gemini.key,
@@ -221,6 +266,10 @@ export default function Providers() {
           providerConfigs.codex.path,
           providerConfigs.codex.key,
         ),
+        managementApi.getProviderList<ProviderApiKeyEntry>(
+          providerConfigs.vertex.path,
+          providerConfigs.vertex.key,
+        ),
         managementApi.getProviderList<OpenAICompatibilityProvider>(
           "/openai-compatibility",
           "openai-compatibility",
@@ -229,6 +278,7 @@ export default function Providers() {
       setGemini(geminiItems);
       setClaude(claudeItems);
       setCodex(codexItems);
+      setVertex(vertexItems);
       setOpenai(openaiItems);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "加载提供商失败");
@@ -244,7 +294,7 @@ export default function Providers() {
     return () => window.removeEventListener("cpam-refresh", refresh);
   }, []);
 
-  const activeConfig = activeTab === "gemini" || activeTab === "claude" || activeTab === "codex"
+  const activeConfig = activeTab === "gemini" || activeTab === "claude" || activeTab === "codex" || activeTab === "vertex"
     ? providerConfigs[activeTab]
     : providerConfigs.gemini;
 
@@ -255,8 +305,11 @@ export default function Providers() {
     if (activeTab === "codex") {
       return codex;
     }
+    if (activeTab === "vertex") {
+      return vertex;
+    }
     return gemini;
-  }, [activeTab, claude, codex, gemini]);
+  }, [activeTab, claude, codex, gemini, vertex]);
 
   function resetEditor() {
     setEditingIndex(null);
@@ -297,7 +350,7 @@ export default function Providers() {
   }
 
   async function saveKeyProvider() {
-    if (activeTab !== "gemini" && activeTab !== "claude" && activeTab !== "codex") {
+    if (activeTab !== "gemini" && activeTab !== "claude" && activeTab !== "codex" && activeTab !== "vertex") {
       return;
     }
     if (!keyForm.apiKey.trim()) {
@@ -321,7 +374,7 @@ export default function Providers() {
   }
 
   async function deleteKeyProvider(index: number) {
-    if (activeTab !== "gemini" && activeTab !== "claude" && activeTab !== "codex") {
+    if (activeTab !== "gemini" && activeTab !== "claude" && activeTab !== "codex" && activeTab !== "vertex") {
       return;
     }
     if (!window.confirm("删除这一条提供商 Key？")) {
@@ -363,6 +416,7 @@ export default function Providers() {
     gemini.length +
     claude.length +
     codex.length +
+    vertex.length +
     openai.reduce((total, provider) => total + (provider["api-key-entries"]?.length ?? 0), 0);
 
   return (
@@ -394,6 +448,9 @@ export default function Providers() {
         <button className={activeTab === "codex" ? "active" : ""} type="button" onClick={() => switchTab("codex")}>
           Codex
         </button>
+        <button className={activeTab === "vertex" ? "active" : ""} type="button" onClick={() => switchTab("vertex")}>
+          Vertex
+        </button>
         <button className={activeTab === "openai" ? "active" : ""} type="button" onClick={() => switchTab("openai")}>
           OpenAI 兼容
         </button>
@@ -419,6 +476,8 @@ export default function Providers() {
               <thead>
                 <tr>
                   <th>Key</th>
+                  <th>prefix</th>
+                  <th>priority</th>
                   <th>base-url</th>
                   <th>proxy-url</th>
                   <th>Headers</th>
@@ -431,6 +490,8 @@ export default function Providers() {
                 {activeList.map((entry, index) => (
                   <tr key={`${entry["api-key"]}-${index}`}>
                     <td className="mono">{maskSecret(entry["api-key"])}</td>
+                    <td className="mono">{entry.prefix || "-"}</td>
+                    <td>{entry.priority ?? 0}</td>
                     <td className="mono">{entry["base-url"] || "-"}</td>
                     <td className="mono">{entry["proxy-url"] || "-"}</td>
                     <td>{objectSize(entry.headers)}</td>
@@ -455,7 +516,7 @@ export default function Providers() {
                 ))}
                 {activeList.length === 0 && (
                   <tr>
-                    <td colSpan={7}>
+                    <td colSpan={9}>
                       <div className="empty-state">暂无 {activeConfig.label} Key</div>
                     </td>
                   </tr>
@@ -486,6 +547,9 @@ export default function Providers() {
               <thead>
                 <tr>
                   <th>名称</th>
+                  <th>状态</th>
+                  <th>prefix</th>
+                  <th>priority</th>
                   <th>base-url</th>
                   <th>Keys</th>
                   <th>模型</th>
@@ -497,6 +561,13 @@ export default function Providers() {
                 {openai.map((provider, index) => (
                   <tr key={`${provider.name}-${index}`}>
                     <td>{provider.name}</td>
+                    <td>
+                      <span className={provider.disabled ? "badge danger" : "badge ok"}>
+                        {provider.disabled ? "禁用" : "启用"}
+                      </span>
+                    </td>
+                    <td className="mono">{provider.prefix || "-"}</td>
+                    <td>{provider.priority ?? 0}</td>
                     <td className="mono">{provider["base-url"]}</td>
                     <td>{provider["api-key-entries"]?.length ?? 0}</td>
                     <td>{provider.models?.length ?? 0}</td>
@@ -520,7 +591,7 @@ export default function Providers() {
                 ))}
                 {openai.length === 0 && (
                   <tr>
-                    <td colSpan={6}>
+                    <td colSpan={9}>
                       <div className="empty-state">暂无 OpenAI 兼容提供商</div>
                     </td>
                   </tr>
@@ -557,6 +628,26 @@ export default function Providers() {
               </div>
               <div className="field-row">
                 <div className="field">
+                  <label htmlFor="provider-prefix">prefix</label>
+                  <input
+                    id="provider-prefix"
+                    placeholder="可选，形如 teamA"
+                    value={keyForm.prefix}
+                    onChange={(event) => setKeyForm({ ...keyForm, prefix: event.target.value })}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="provider-priority">priority</label>
+                  <input
+                    id="provider-priority"
+                    type="number"
+                    value={keyForm.priority}
+                    onChange={(event) => setKeyForm({ ...keyForm, priority: event.target.value })}
+                  />
+                </div>
+              </div>
+              <div className="field-row">
+                <div className="field">
                   <label htmlFor="provider-base-url">base-url</label>
                   <input
                     id="provider-base-url"
@@ -574,6 +665,19 @@ export default function Providers() {
                   />
                 </div>
               </div>
+              {activeTab === "codex" && (
+                <div className="toggle-line">
+                  <div>
+                    <strong>启用 WebSocket transport</strong>
+                    <div className="faint">codex-api-key.websockets</div>
+                  </div>
+                  <button
+                    className={keyForm.websockets ? "switch on" : "switch"}
+                    type="button"
+                    onClick={() => setKeyForm({ ...keyForm, websockets: !keyForm.websockets })}
+                  />
+                </div>
+              )}
               <div className="field">
                 <label htmlFor="provider-headers">Headers，每行 Key: Value</label>
                 <textarea
@@ -647,6 +751,36 @@ export default function Providers() {
                     onChange={(event) => setOpenaiForm({ ...openaiForm, baseUrl: event.target.value })}
                   />
                 </div>
+              </div>
+              <div className="field-row">
+                <div className="field">
+                  <label htmlFor="openai-prefix">prefix</label>
+                  <input
+                    id="openai-prefix"
+                    value={openaiForm.prefix}
+                    onChange={(event) => setOpenaiForm({ ...openaiForm, prefix: event.target.value })}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="openai-priority">priority</label>
+                  <input
+                    id="openai-priority"
+                    type="number"
+                    value={openaiForm.priority}
+                    onChange={(event) => setOpenaiForm({ ...openaiForm, priority: event.target.value })}
+                  />
+                </div>
+              </div>
+              <div className="toggle-line">
+                <div>
+                  <strong>禁用这个提供商</strong>
+                  <div className="faint">openai-compatibility.disabled</div>
+                </div>
+                <button
+                  className={openaiForm.disabled ? "switch on" : "switch"}
+                  type="button"
+                  onClick={() => setOpenaiForm({ ...openaiForm, disabled: !openaiForm.disabled })}
+                />
               </div>
               <div className="field">
                 <label htmlFor="openai-key-entries">api-key-entries，每行 api-key | proxy-url</label>

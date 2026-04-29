@@ -15,6 +15,9 @@ export default function Logs() {
   const [selectedErrorLog, setSelectedErrorLog] = useState<ErrorLogFile | null>(null);
   const [selectedErrorLogContent, setSelectedErrorLogContent] = useState("");
   const [loadingSelectedErrorLog, setLoadingSelectedErrorLog] = useState(false);
+  const [requestLogId, setRequestLogId] = useState("");
+  const [requestLogByIdContent, setRequestLogByIdContent] = useState("");
+  const [loadingRequestLogById, setLoadingRequestLogById] = useState(false);
   const [logsDisabled, setLogsDisabled] = useState(false);
   const [loggingToFile, setLoggingToFile] = useState(false);
   const [requestLog, setRequestLog] = useState(false);
@@ -137,6 +140,34 @@ export default function Logs() {
     }
   }
 
+  async function viewRequestLogById() {
+    const id = requestLogId.trim();
+    if (!id) {
+      return;
+    }
+    setLoadingRequestLogById(true);
+    setRequestLogByIdContent("");
+    setError("");
+    try {
+      const blob = await managementApi.downloadRequestLogById(id);
+      setRequestLogByIdContent(await blob.text());
+      setMessage("请求日志已读取");
+    } catch (viewError) {
+      setError(viewError instanceof Error ? viewError.message : "按请求 ID 读取日志失败");
+    } finally {
+      setLoadingRequestLogById(false);
+    }
+  }
+
+  async function downloadRequestLogById() {
+    const id = requestLogId.trim();
+    if (!id) {
+      return;
+    }
+    const blob = await managementApi.downloadRequestLogById(id);
+    downloadBrowserFile(blob, `request-${id}.log`);
+  }
+
   return (
     <div className="page">
       <div className="page-heading">
@@ -213,6 +244,49 @@ export default function Logs() {
                   {line}
                 </div>
               ))
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <h3 className="panel-title">
+            <Icon name="search" size={16} />
+            按请求 ID 查询
+          </h3>
+          <div className="actions">
+            <button className="button subtle" disabled={!requestLogId.trim() || loadingRequestLogById} type="button" onClick={viewRequestLogById}>
+              <Icon name="file" size={16} />
+              查看
+            </button>
+            <button className="button" disabled={!requestLogId.trim()} type="button" onClick={downloadRequestLogById}>
+              <Icon name="download" size={16} />
+              下载
+            </button>
+          </div>
+        </div>
+        <div className="panel-body form-stack">
+          <div className="field">
+            <label htmlFor="request-log-id">request ID</label>
+            <input
+              id="request-log-id"
+              placeholder="输入请求日志文件名末尾的 request ID"
+              value={requestLogId}
+              onChange={(event) => setRequestLogId(event.target.value)}
+            />
+          </div>
+          <div className="log-viewer request-log-viewer">
+            {loadingRequestLogById ? (
+              <div className="log-line">读取中...</div>
+            ) : requestLogByIdContent ? (
+              requestLogByIdContent.split("\n").map((line, index) => (
+                <div className="log-line" key={`${index}-${line.slice(0, 24)}`}>
+                  {line}
+                </div>
+              ))
+            ) : (
+              <div className="log-line">暂无内容</div>
             )}
           </div>
         </div>

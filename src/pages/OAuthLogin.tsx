@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { managementApi, OAuthProvider } from "../api/client";
+import { managementApi, OAuthModelAliasEntry, OAuthProvider } from "../api/client";
 import Icon from "../components/Icon";
 import { splitLines, uniqueClean } from "../utils/format";
 
@@ -43,6 +43,29 @@ function needsCallback(flow: AuthFlow | null): boolean {
   return Boolean(flow && flow.provider !== "kimi");
 }
 
+function aliasEntriesToText(entries: OAuthModelAliasEntry[]): string {
+  return entries
+    .map((entry) => `${entry.name} => ${entry.alias}${entry.fork ? " | fork" : ""}`)
+    .join("\n");
+}
+
+function textToAliasEntries(value: string): OAuthModelAliasEntry[] {
+  return value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [mapping, flag = ""] = line.split("|").map((item) => item.trim());
+      const [name, alias] = mapping.split(/=>|,/).map((item) => item.trim());
+      return {
+        name,
+        alias,
+        fork: /\bfork\b|true|1|yes/i.test(flag) || undefined,
+      };
+    })
+    .filter((entry) => entry.name && entry.alias);
+}
+
 async function copyText(value: string): Promise<boolean> {
   try {
     if (navigator.clipboard?.writeText) {
@@ -80,9 +103,13 @@ export default function OAuthLogin() {
   const [callbackUrl, setCallbackUrl] = useState("");
   const [submittingCallback, setSubmittingCallback] = useState(false);
   const [oauthExcluded, setOauthExcluded] = useState<Record<string, string[]>>({});
+  const [oauthAliases, setOauthAliases] = useState<Record<string, OAuthModelAliasEntry[]>>({});
   const [oauthProvider, setOauthProvider] = useState("");
   const [oauthModels, setOauthModels] = useState("");
+  const [aliasChannel, setAliasChannel] = useState("");
+  const [aliasText, setAliasText] = useState("");
   const [excludedModalOpen, setExcludedModalOpen] = useState(false);
+  const [aliasModalOpen, setAliasModalOpen] = useState(false);
   const [loadingExcluded, setLoadingExcluded] = useState(true);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -91,9 +118,14 @@ export default function OAuthLogin() {
     setLoadingExcluded(true);
     setError("");
     try {
-      setOauthExcluded(await managementApi.getOAuthExcludedModels());
+      const [excluded, aliases] = await Promise.all([
+        managementApi.getOAuthExcludedModels(),
+        managementApi.getOAuthModelAlias(),
+      ]);
+      setOauthExcluded(excluded);
+      setOauthAliases(aliases);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "加载 OAuth 排除模型失败");
+      setError(loadError instanceof Error ? loadError.message : "加载 OAuth 配置失败");
     } finally {
       setLoadingExcluded(false);
     }
@@ -240,6 +272,40 @@ export default function OAuthLogin() {
     await loadExcludedModels();
   }
 
+  function openAliasEditor(channel = "", entries: OAuthModelAliasEntry[] = []) {
+    setAliasChannel(channel);
+    setAliasText(aliasEntriesToText(entries));
+    setAliasModalOpen(true);
+    setError("");
+  }
+
+  async function saveOauthAlias() {
+    const channel = aliasChannel.trim().toLowerCase();
+    if (!channel) {
+      setError("Channel 不能为空");
+      return;
+    }
+    const entries = textToAliasEntries(aliasText);
+    const next = { ...oauthAliases };
+    if (entries.length === 0) {
+      delete next[channel];
+    } else {
+      next[channel] = entries;
+    }
+    await managementApi.putOAuthModelAlias(next);
+    setAliasModalOpen(false);
+    setAliasChannel("");
+    setAliasText("");
+    setMessage("OAuth 模型别名已保存");
+    await loadExcludedModels();
+  }
+
+  async function deleteOauthAliasChannel(channel: string) {
+    await managementApi.deleteOAuthModelAliasChannel(channel);
+    setMessage("OAuth 模型别名已删除");
+    await loadExcludedModels();
+  }
+
   useEffect(() => {
     const waitingStates = Array.from(
       new Set(
@@ -364,6 +430,66 @@ export default function OAuthLogin() {
           </div>
         </section>
       </div>
+
+      <section className="panel">
+        <div className="panel-header">
+          <h3 className="panel-title">
+            <Icon name="layers" size={16} />
+            OAuth 模型别名
+          </h3>
+          <button className="button primary" type="button" onClick={() => openAliasEditor()}>
+            <Icon name="plus" size={16} />
+            新增
+          </button>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Channel</th>
+                <th>别名</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(oauthAliases).map(([channel, entries]) => (
+                <tr key={channel}>
+                  <td>{channel}</td>
+                  <td>
+                    {entries.map((entry) => (
+                      <span className="tag" key={`${entry.name}-${entry.alias}`}>
+                        {entry.name} =&gt; {entry.alias}{entry.fork ? " +fork" : ""}
+                      </span>
+                    ))}
+                  </td>
+                  <td>
+                    <div className="actions">
+                      <button
+                        className="icon-button"
+                        title="编辑"
+                        type="button"
+                        onClick={() => openAliasEditor(channel, entries)}
+                      >
+                        <Icon name="edit" />
+                      </button>
+                      <button className="icon-button" title="删除" type="button" onClick={() => deleteOauthAliasChannel(channel)}>
+                        <Icon name="trash" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {Object.keys(oauthAliases).length === 0 && (
+                <tr>
+                  <td colSpan={3}>
+                    <div className="empty-state">暂无 OAuth 模型别名</div>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       <section className="panel">
         <div className="panel-header">
@@ -560,6 +686,50 @@ export default function OAuthLogin() {
                   取消
                 </button>
                 <button className="button primary" type="button" onClick={saveOauthExcluded}>
+                  <Icon name="save" size={16} />
+                  保存
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {aliasModalOpen && (
+        <div className="modal-backdrop" role="presentation">
+          <div className="modal-panel" role="dialog" aria-modal="true" aria-labelledby="oauth-alias-modal-title">
+            <div className="modal-header">
+              <div>
+                <h3 id="oauth-alias-modal-title">编辑 OAuth 模型别名</h3>
+                <p className="panel-subtitle">每行填写 name =&gt; alias；追加 | fork 可保留原模型并额外暴露别名。</p>
+              </div>
+              <button className="icon-button" title="关闭" type="button" onClick={() => setAliasModalOpen(false)}>
+                <Icon name="x" />
+              </button>
+            </div>
+            <div className="modal-body form-stack">
+              <div className="field">
+                <label htmlFor="oauth-alias-channel">Channel</label>
+                <input
+                  id="oauth-alias-channel"
+                  placeholder="gemini-cli / vertex / aistudio / antigravity / claude / codex / kimi"
+                  value={aliasChannel}
+                  onChange={(event) => setAliasChannel(event.target.value)}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="oauth-alias-lines">别名，每行 name =&gt; alias | fork</label>
+                <textarea
+                  id="oauth-alias-lines"
+                  value={aliasText}
+                  onChange={(event) => setAliasText(event.target.value)}
+                />
+              </div>
+              <div className="modal-actions">
+                <button className="button subtle" type="button" onClick={() => setAliasModalOpen(false)}>
+                  取消
+                </button>
+                <button className="button primary" type="button" onClick={saveOauthAlias}>
                   <Icon name="save" size={16} />
                   保存
                 </button>

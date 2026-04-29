@@ -12,8 +12,11 @@ interface NavItem {
 const navItems: NavItem[] = [
   { to: "/", label: "仪表盘", icon: "activity" },
   { to: "/providers", label: "提供商", icon: "layers" },
+  { to: "/ampcode", label: "AmpCode", icon: "code" },
   { to: "/keys", label: "API Key", icon: "key" },
   { to: "/auth-files", label: "认证文件", icon: "shield" },
+  { to: "/models", label: "模型", icon: "layers" },
+  { to: "/api-call", label: "API 调用", icon: "code" },
   { to: "/oauth", label: "OAuth 登录", icon: "shield" },
   { to: "/quota", label: "配额", icon: "activity" },
   { to: "/logs", label: "日志", icon: "logs" },
