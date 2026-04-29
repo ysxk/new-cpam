@@ -9,28 +9,45 @@ import {
 import Icon from "../components/Icon";
 import { formatDate, formatNumber } from "../utils/format";
 
-interface FailureRow extends UsageDetail {
+interface RequestRow extends UsageDetail {
   api: string;
   model: string;
 }
 
-interface AuthQuotaRow {
-  key: string;
-  provider: string;
-  name: string;
-  scope: string;
-  status: string;
-  reason: string;
-  nextRecover?: string;
+interface UsageAggregate {
+  requests: number;
+  failed: number;
+  tokens: number;
+  quotaFailures: number;
+  models: Set<string>;
+  lastSeen?: string;
+  lastError?: string;
 }
 
-function flattenFailures(apis: Record<string, UsageApiBucket> = {}): FailureRow[] {
+interface AccountQuotaRow {
+  key: string;
+  provider: string;
+  account: string;
+  fileName: string;
+  authIndex: string;
+  runtimeStatus: string;
+  quotaStatus: string;
+  quotaClass: "ok" | "warn" | "danger";
+  requests: number;
+  failed: number;
+  tokens: number;
+  quotaFailures: number;
+  models: number;
+  lastSeen?: string;
+  nextRecover?: string;
+  reason: string;
+}
+
+function flattenRequests(apis: Record<string, UsageApiBucket> = {}): RequestRow[] {
   return Object.entries(apis)
     .flatMap(([api, bucket]) =>
       Object.entries(bucket.models ?? {}).flatMap(([model, modelBucket]) =>
-        (modelBucket.details ?? [])
-          .filter((detail) => detail.failed || detail.error)
-          .map((detail) => ({ ...detail, api, model })),
+        (modelBucket.details ?? []).map((detail) => ({ ...detail, api, model })),
       ),
     )
     .sort((left, right) => String(right.timestamp ?? "").localeCompare(String(left.timestamp ?? "")));
@@ -41,38 +58,222 @@ function isQuotaText(value: string | undefined): boolean {
   return /quota|配额|rate.?limit|429|resource_exhausted|insufficient_quota|exceeded|too many requests|billing/.test(text);
 }
 
-function authQuotaRows(files: AuthFile[]): AuthQuotaRow[] {
-  return files.flatMap((file) => {
-    const rows: AuthQuotaRow[] = [];
-    const reason = file.quota?.reason ?? file.last_error?.message ?? file.status_message ?? "";
-    if (file.quota?.exceeded || file.unavailable || isQuotaText(reason)) {
-      rows.push({
-        key: `${file.id ?? file.name}-auth`,
-        provider: file.provider ?? file.type ?? "-",
-        name: file.label ?? file.account ?? file.email ?? file.name,
-        scope: "账号",
-        status: file.unavailable ? "unavailable" : file.status ?? "ready",
-        reason: reason || "quota exceeded",
-        nextRecover: file.quota?.next_recover_at ?? file.next_retry_after,
-      });
+function providerName(file: AuthFile): string {
+  return file.provider ?? file.type ?? "-";
+}
+
+function accountName(file: AuthFile): string {
+  return file.email ?? file.account ?? file.label ?? file.name;
+}
+
+function runtimeStatus(file: AuthFile): string {
+  if (file.disabled) {
+    return "disabled";
+  }
+  if (file.unavailable) {
+    return "unavailable";
+  }
+  if (file.status) {
+    return file.status;
+  }
+  if (file.runtime_only) {
+    return "runtime";
+  }
+  return "ready";
+}
+
+function tokenTotal(detail: UsageDetail): number {
+  const tokens = detail.tokens;
+  if (!tokens) {
+    return 0;
+  }
+  return Number(
+    tokens.total_tokens ??
+      (Number(tokens.input_tokens ?? 0) +
+        Number(tokens.output_tokens ?? 0) +
+        Number(tokens.reasoning_tokens ?? 0)),
+  );
+}
+
+function emptyAggregate(): UsageAggregate {
+  return {
+    requests: 0,
+    failed: 0,
+    tokens: 0,
+    quotaFailures: 0,
+    models: new Set<string>(),
+  };
+}
+
+function addUsage(map: Map<string, UsageAggregate>, key: string, row: RequestRow) {
+  const trimmedKey = key.trim();
+  if (!trimmedKey) {
+    return;
+  }
+  const current = map.get(trimmedKey) ?? emptyAggregate();
+  current.requests += 1;
+  current.failed += row.failed ? 1 : 0;
+  current.tokens += tokenTotal(row);
+  current.models.add(row.model);
+  if (isQuotaText(row.error)) {
+    current.quotaFailures += 1;
+    current.lastError = row.error;
+  } else if (row.error) {
+    current.lastError = row.error;
+  }
+  if (!current.lastSeen || String(row.timestamp ?? "").localeCompare(String(current.lastSeen)) > 0) {
+    current.lastSeen = row.timestamp;
+  }
+  map.set(trimmedKey, current);
+}
+
+function aggregateUsage(rows: RequestRow[]) {
+  const byAuthIndex = new Map<string, UsageAggregate>();
+  const bySource = new Map<string, UsageAggregate>();
+
+  rows.forEach((row) => {
+    if (row.auth_index) {
+      addUsage(byAuthIndex, row.auth_index, row);
+    }
+    if (row.source) {
+      addUsage(bySource, row.source.toLowerCase(), row);
+    }
+  });
+
+  return { byAuthIndex, bySource };
+}
+
+function mergeAggregate(primary?: UsageAggregate, fallback?: UsageAggregate): UsageAggregate {
+  if (primary) {
+    return primary;
+  }
+  if (fallback) {
+    return fallback;
+  }
+  return emptyAggregate();
+}
+
+function quotaState(file: AuthFile, usage: UsageAggregate): Pick<AccountQuotaRow, "quotaClass" | "quotaStatus" | "reason" | "nextRecover"> {
+  const reason = file.quota?.reason ?? file.last_error?.message ?? usage.lastError ?? file.status_message ?? "";
+  const nextRecover = file.quota?.next_recover_at ?? file.next_retry_after;
+
+  if (file.quota?.exceeded || usage.quotaFailures > 0 || isQuotaText(reason)) {
+    return {
+      quotaClass: "danger",
+      quotaStatus: "疑似耗尽",
+      reason: reason || "命中配额或限流错误",
+      nextRecover,
+    };
+  }
+  if (file.disabled || file.unavailable || file.status === "error") {
+    return {
+      quotaClass: "danger",
+      quotaStatus: "不可用",
+      reason: reason || file.status_message || "账号不可用",
+      nextRecover,
+    };
+  }
+  if (file.runtime_only || file.status === "wait") {
+    return {
+      quotaClass: "warn",
+      quotaStatus: "等待",
+      reason: reason || "等待刷新或运行时账号",
+      nextRecover,
+    };
+  }
+  return {
+    quotaClass: "ok",
+    quotaStatus: "正常",
+    reason,
+    nextRecover,
+  };
+}
+
+function buildAccountRows(files: AuthFile[], rows: RequestRow[]): AccountQuotaRow[] {
+  const usage = aggregateUsage(rows);
+  const matchedAuthIndexes = new Set<string>();
+  const matchedSources = new Set<string>();
+
+  const accountRows = files.map((file) => {
+    const authIndex = file.auth_index ?? "";
+    const sourceKey = accountName(file).toLowerCase();
+    const usageStats = mergeAggregate(
+      authIndex ? usage.byAuthIndex.get(authIndex) : undefined,
+      usage.bySource.get(sourceKey),
+    );
+    if (authIndex) {
+      matchedAuthIndexes.add(authIndex);
+    }
+    if (sourceKey) {
+      matchedSources.add(sourceKey);
     }
 
-    Object.entries(file.model_states ?? {}).forEach(([model, state]) => {
-      const modelReason = state.quota?.reason ?? state.last_error?.message ?? state.status_message ?? "";
-      if (state.quota?.exceeded || state.unavailable || isQuotaText(modelReason)) {
-        rows.push({
-          key: `${file.id ?? file.name}-${model}`,
-          provider: file.provider ?? file.type ?? "-",
-          name: file.label ?? file.account ?? file.email ?? file.name,
-          scope: model,
-          status: state.status ?? (state.unavailable ? "unavailable" : "ready"),
-          reason: modelReason || "quota exceeded",
-          nextRecover: state.quota?.next_recover_at ?? state.next_retry_after,
-        });
-      }
-    });
+    const quota = quotaState(file, usageStats);
+    return {
+      key: file.id ?? file.name,
+      provider: providerName(file),
+      account: accountName(file),
+      fileName: file.name,
+      authIndex,
+      runtimeStatus: runtimeStatus(file),
+      quotaStatus: quota.quotaStatus,
+      quotaClass: quota.quotaClass,
+      requests: usageStats.requests,
+      failed: usageStats.failed,
+      tokens: usageStats.tokens,
+      quotaFailures: usageStats.quotaFailures,
+      models: usageStats.models.size,
+      lastSeen: usageStats.lastSeen,
+      nextRecover: quota.nextRecover,
+      reason: quota.reason,
+    };
+  });
 
-    return rows;
+  const sourceOnlyRows = Array.from(usage.bySource.entries())
+    .filter(([source]) => source && !matchedSources.has(source))
+    .map(([source, usageStats]) => ({
+      key: `usage-source-${source}`,
+      provider: "-",
+      account: source,
+      fileName: "-",
+      authIndex: "-",
+      runtimeStatus: "usage-only",
+      quotaStatus: usageStats.quotaFailures > 0 ? "疑似耗尽" : "统计记录",
+      quotaClass: usageStats.quotaFailures > 0 ? "danger" as const : "warn" as const,
+      requests: usageStats.requests,
+      failed: usageStats.failed,
+      tokens: usageStats.tokens,
+      quotaFailures: usageStats.quotaFailures,
+      models: usageStats.models.size,
+      lastSeen: usageStats.lastSeen,
+      reason: usageStats.lastError ?? "",
+    }));
+
+  const authOnlyRows = Array.from(usage.byAuthIndex.entries())
+    .filter(([authIndex]) => authIndex && !matchedAuthIndexes.has(authIndex))
+    .map(([authIndex, usageStats]) => ({
+      key: `usage-auth-${authIndex}`,
+      provider: "-",
+      account: "-",
+      fileName: "-",
+      authIndex,
+      runtimeStatus: "usage-only",
+      quotaStatus: usageStats.quotaFailures > 0 ? "疑似耗尽" : "统计记录",
+      quotaClass: usageStats.quotaFailures > 0 ? "danger" as const : "warn" as const,
+      requests: usageStats.requests,
+      failed: usageStats.failed,
+      tokens: usageStats.tokens,
+      quotaFailures: usageStats.quotaFailures,
+      models: usageStats.models.size,
+      lastSeen: usageStats.lastSeen,
+      reason: usageStats.lastError ?? "",
+    }));
+
+  return [...accountRows, ...sourceOnlyRows, ...authOnlyRows].sort((left, right) => {
+    if (left.quotaFailures !== right.quotaFailures) {
+      return right.quotaFailures - left.quotaFailures;
+    }
+    return left.provider.localeCompare(right.provider) || left.account.localeCompare(right.account);
   });
 }
 
@@ -145,23 +346,21 @@ export default function Quota() {
   }
 
   const usage = usageResponse.usage ?? {};
-  const failures = useMemo(() => flattenFailures(usage.apis), [usage.apis]);
+  const requestRows = useMemo(() => flattenRequests(usage.apis), [usage.apis]);
+  const accountRows = useMemo(() => buildAccountRows(authFiles, requestRows), [authFiles, requestRows]);
   const quotaFailures = useMemo(
-    () => failures.filter((row) => isQuotaText(row.error)).slice(0, 40),
-    [failures],
+    () => requestRows.filter((row) => row.failed && isQuotaText(row.error)).slice(0, 40),
+    [requestRows],
   );
-  const authRows = useMemo(() => authQuotaRows(authFiles), [authFiles]);
-  const affectedProviders = useMemo(
-    () => new Set([...quotaFailures.map((row) => row.api), ...authRows.map((row) => row.provider)]).size,
-    [authRows, quotaFailures],
-  );
+  const quotaAccountCount = accountRows.filter((row) => row.quotaFailures > 0 || row.quotaStatus === "疑似耗尽").length;
+  const okAccountCount = accountRows.filter((row) => row.quotaClass === "ok").length;
 
   return (
     <div className="page">
       <div className="page-heading">
         <div>
           <h2>配额</h2>
-          <p>查看配额相关状态、失败请求，并控制配额耗尽时的自动切换策略。</p>
+          <p>按账号查看配额状态、命中统计、疑似配额失败，并控制配额耗尽时的自动切换策略。</p>
         </div>
         <button className="button" disabled={loading} type="button" onClick={loadQuota}>
           <Icon name="refresh" size={16} />
@@ -174,23 +373,23 @@ export default function Quota() {
 
       <div className="grid four">
         <div className="stat-card">
-          <div className="stat-label">疑似配额失败</div>
-          <div className="stat-value">{formatNumber(quotaFailures.length)}</div>
-          <div className="stat-trend">来自请求统计的失败记录</div>
+          <div className="stat-label">账号</div>
+          <div className="stat-value">{formatNumber(accountRows.length)}</div>
+          <div className="stat-trend">认证文件与统计命中账号</div>
         </div>
         <div className="stat-card">
-          <div className="stat-label">认证限流状态</div>
-          <div className="stat-value">{formatNumber(authRows.length)}</div>
-          <div className="stat-trend">账号或模型级状态</div>
+          <div className="stat-label">正常</div>
+          <div className="stat-value">{formatNumber(okAccountCount)}</div>
+          <div className="stat-trend">未发现配额异常</div>
         </div>
         <div className="stat-card">
-          <div className="stat-label">受影响提供商</div>
-          <div className="stat-value">{formatNumber(affectedProviders)}</div>
-          <div className="stat-trend">按 API 与 Provider 去重</div>
+          <div className="stat-label">疑似配额账号</div>
+          <div className="stat-value">{formatNumber(quotaAccountCount)}</div>
+          <div className="stat-trend">账号级或请求级命中</div>
         </div>
         <div className="stat-card">
           <div className="stat-label">总失败</div>
-          <div className="stat-value">{formatNumber(usage.failure_count ?? usageResponse.failed_requests ?? failures.length)}</div>
+          <div className="stat-value">{formatNumber(usage.failure_count ?? usageResponse.failed_requests ?? 0)}</div>
           <div className="stat-trend">总请求 {formatNumber(usage.total_requests)}</div>
         </div>
       </div>
@@ -214,11 +413,16 @@ export default function Quota() {
 
       <section className="panel">
         <div className="panel-header">
-          <h3 className="panel-title">
-            <Icon name="shield" size={16} />
-            认证配额状态
-          </h3>
-          <span className="badge">{authRows.length} 条</span>
+          <div>
+            <h3 className="panel-title">
+              <Icon name="shield" size={16} />
+              账号配额概览
+            </h3>
+            <p className="panel-subtitle">
+              当前管理 API 未提供剩余额度数值；这里展示账号状态、命中统计和疑似配额耗尽信号。
+            </p>
+          </div>
+          <span className="badge">{accountRows.length} 个账号</span>
         </div>
         <div className="table-wrap">
           <table>
@@ -226,29 +430,45 @@ export default function Quota() {
               <tr>
                 <th>提供商</th>
                 <th>账号</th>
-                <th>范围</th>
-                <th>状态</th>
+                <th>配额</th>
+                <th>运行状态</th>
+                <th>请求</th>
+                <th>失败</th>
+                <th>配额失败</th>
+                <th>Token</th>
+                <th>模型</th>
+                <th>最近命中</th>
                 <th>恢复时间</th>
-                <th>原因</th>
+                <th>认证</th>
               </tr>
             </thead>
             <tbody>
-              {authRows.map((row) => (
+              {accountRows.map((row) => (
                 <tr key={row.key}>
                   <td>{row.provider}</td>
-                  <td>{row.name}</td>
-                  <td className="mono">{row.scope}</td>
                   <td>
-                    <span className={row.status === "ready" ? "badge ok" : "badge warn"}>{row.status}</span>
+                    <div>{row.account}</div>
+                    <div className="faint mono">{row.fileName}</div>
+                    {row.reason && <div className="faint">{row.reason}</div>}
                   </td>
+                  <td>
+                    <span className={`badge ${row.quotaClass}`}>{row.quotaStatus}</span>
+                  </td>
+                  <td>{row.runtimeStatus}</td>
+                  <td>{formatNumber(row.requests)}</td>
+                  <td>{formatNumber(row.failed)}</td>
+                  <td>{formatNumber(row.quotaFailures)}</td>
+                  <td>{formatNumber(row.tokens, true)}</td>
+                  <td>{formatNumber(row.models)}</td>
+                  <td>{formatDate(row.lastSeen)}</td>
                   <td>{formatDate(row.nextRecover)}</td>
-                  <td>{row.reason || "-"}</td>
+                  <td className="mono">{row.authIndex || "-"}</td>
                 </tr>
               ))}
-              {authRows.length === 0 && (
+              {accountRows.length === 0 && (
                 <tr>
-                  <td colSpan={6}>
-                    <div className="empty-state">暂无账号或模型级配额状态</div>
+                  <td colSpan={12}>
+                    <div className="empty-state">暂无账号。请先在认证文件或 OAuth 登录中添加账号。</div>
                   </td>
                 </tr>
               )}
@@ -272,7 +492,7 @@ export default function Quota() {
                 <th>时间</th>
                 <th>API</th>
                 <th>模型</th>
-                <th>来源</th>
+                <th>命中账号</th>
                 <th>认证</th>
                 <th>错误</th>
               </tr>
