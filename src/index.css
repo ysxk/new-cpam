@@ -522,6 +522,225 @@ tbody tr:hover {
   padding: 16px;
 }
 
+.auth-files-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  align-items: start;
+  gap: 14px;
+}
+
+.auth-files-main {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.auth-toolbar {
+  align-items: center;
+  border-bottom: 0;
+}
+
+.auth-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 320px;
+  min-width: 220px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--color-faint);
+  padding: 0 10px;
+}
+
+.auth-search input {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  min-height: 38px;
+  padding: 0;
+}
+
+.auth-filter-select {
+  width: 178px;
+  min-height: 38px;
+}
+
+.segmented.compact button {
+  min-height: 30px;
+  padding: 6px 9px;
+}
+
+.auth-card-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(260px, 1fr));
+  gap: 14px;
+}
+
+.auth-file-card {
+  display: flex;
+  min-width: 0;
+  min-height: 260px;
+  flex-direction: column;
+  gap: 13px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: #fff;
+  padding: 15px;
+}
+
+.auth-file-card.ready {
+  box-shadow: inset 3px 0 0 var(--color-teal);
+}
+
+.auth-file-card.warning {
+  box-shadow: inset 3px 0 0 #d69e2e;
+}
+
+.auth-file-card.error {
+  box-shadow: inset 3px 0 0 var(--color-red);
+}
+
+.auth-card-top {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+}
+
+.auth-provider-avatar {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-weight: 850;
+}
+
+.auth-provider-avatar.claude {
+  background: #f4eadf;
+  color: #8a5624;
+}
+
+.auth-provider-avatar.codex {
+  background: #e8eef8;
+  color: #253b66;
+}
+
+.auth-provider-avatar.gemini {
+  background: #e2f6f1;
+  color: #0f7e74;
+}
+
+.auth-provider-avatar.kimi {
+  background: #f1e9ff;
+  color: #6d42bd;
+}
+
+.auth-card-title {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.auth-card-title strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+}
+
+.auth-card-title span {
+  overflow: hidden;
+  color: var(--color-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.auth-account-line {
+  display: flex;
+  align-items: center;
+  min-height: 28px;
+  gap: 8px;
+  color: var(--color-text);
+  font-weight: 750;
+}
+
+.auth-account-line > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.auth-card-message {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-card-muted);
+  color: var(--color-muted);
+  padding: 9px 10px;
+  font-size: 12px;
+}
+
+.auth-card-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: auto;
+}
+
+.auth-card-meta div {
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-card-muted);
+  padding: 9px;
+}
+
+.auth-card-meta span,
+.auth-card-meta strong {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.auth-card-meta span {
+  color: var(--color-faint);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.auth-card-meta strong {
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+.auth-card-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.auth-card-actions .button {
+  width: 100%;
+}
+
+.auth-vertex-panel {
+  position: sticky;
+  top: calc(var(--header-height) + 14px);
+}
+
+.auth-vertex-dropzone {
+  min-height: 146px;
+}
+
 .auth-provider-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -657,6 +876,18 @@ tbody tr:hover {
   .grid.sidebar-layout {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .auth-files-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .auth-card-grid {
+    grid-template-columns: repeat(2, minmax(260px, 1fr));
+  }
+
+  .auth-vertex-panel {
+    position: static;
+  }
 }
 
 @media (max-width: 820px) {
@@ -690,6 +921,21 @@ tbody tr:hover {
   .auth-provider-grid,
   .oauth-steps {
     grid-template-columns: 1fr;
+  }
+
+  .auth-card-grid,
+  .auth-card-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .auth-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .auth-search,
+  .auth-filter-select {
+    width: 100%;
   }
 
   .modal-backdrop {

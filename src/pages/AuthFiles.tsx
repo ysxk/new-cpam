@@ -1,21 +1,96 @@
-import { ChangeEvent, useEffect, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useState } from "react";
 import { AuthFile, downloadBrowserFile, managementApi } from "../api/client";
 import Icon from "../components/Icon";
 import { formatBytes, formatDate } from "../utils/format";
 
-function fileStatusClass(file: AuthFile): string {
+type StatusFilter = "all" | "ready" | "warning" | "error";
+
+function statusKind(file: AuthFile): Exclude<StatusFilter, "all"> {
   if (file.disabled || file.unavailable || file.status === "error") {
-    return "badge danger";
+    return "error";
   }
   if (file.runtime_only || file.status === "wait") {
+    return "warning";
+  }
+  return "ready";
+}
+
+function fileStatusClass(file: AuthFile): string {
+  const kind = statusKind(file);
+  if (kind === "error") {
+    return "badge danger";
+  }
+  if (kind === "warning") {
     return "badge warn";
   }
   return "badge ok";
 }
 
+function statusLabel(file: AuthFile): string {
+  if (file.status) {
+    return file.status;
+  }
+  if (file.disabled) {
+    return "disabled";
+  }
+  if (file.runtime_only) {
+    return "runtime";
+  }
+  return "ready";
+}
+
+function providerName(file: AuthFile): string {
+  return file.provider ?? file.type ?? "unknown";
+}
+
+function providerTone(file: AuthFile): string {
+  const provider = providerName(file).toLowerCase();
+  if (provider.includes("claude") || provider.includes("anthropic")) {
+    return "claude";
+  }
+  if (provider.includes("codex") || provider.includes("openai")) {
+    return "codex";
+  }
+  if (provider.includes("gemini") || provider.includes("vertex")) {
+    return "gemini";
+  }
+  if (provider.includes("kimi")) {
+    return "kimi";
+  }
+  return "default";
+}
+
+function providerInitial(file: AuthFile): string {
+  return providerName(file).trim().slice(0, 1).toUpperCase() || "A";
+}
+
+function accountLabel(file: AuthFile): string {
+  return file.email ?? file.account ?? file.label ?? "-";
+}
+
+function matchesSearch(file: AuthFile, query: string): boolean {
+  const text = [
+    file.name,
+    file.label,
+    file.provider,
+    file.type,
+    file.email,
+    file.account,
+    file.status,
+    file.status_message,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return text.includes(query.trim().toLowerCase());
+}
+
 export default function AuthFiles() {
   const [files, setFiles] = useState<AuthFile[]>([]);
   const [vertexLocation, setVertexLocation] = useState("us-central1");
+  const [query, setQuery] = useState("");
+  const [providerFilter, setProviderFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -84,6 +159,26 @@ export default function AuthFiles() {
     await loadFiles();
   }
 
+  const providerOptions = useMemo(
+    () => Array.from(new Set(files.map((file) => providerName(file)).filter(Boolean))).sort(),
+    [files],
+  );
+
+  const filteredFiles = useMemo(
+    () =>
+      files.filter((file) => {
+        const providerMatched = providerFilter === "all" || providerName(file) === providerFilter;
+        const statusMatched = statusFilter === "all" || statusKind(file) === statusFilter;
+        return providerMatched && statusMatched && matchesSearch(file, query);
+      }),
+    [files, providerFilter, query, statusFilter],
+  );
+
+  const readyCount = files.filter((file) => statusKind(file) === "ready").length;
+  const warningCount = files.filter((file) => statusKind(file) === "warning").length;
+  const errorCount = files.filter((file) => statusKind(file) === "error").length;
+  const fileCount = files.filter((file) => file.source !== "memory" && !file.runtime_only).length;
+
   return (
     <div className="page">
       <div className="page-heading">
@@ -111,84 +206,138 @@ export default function AuthFiles() {
       {error && <div className="error-state">{error}</div>}
       {message && <div className="empty-state">{message}</div>}
 
-      <div className="grid sidebar-layout">
-        <section className="panel">
-          <div className="panel-header">
-            <h3 className="panel-title">
-              <Icon name="file" size={16} />
-              文件列表
-            </h3>
-            <span className="badge">{files.length} 个</span>
-          </div>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>名称</th>
-                  <th>提供商</th>
-                  <th>邮箱 / 账号</th>
-                  <th>状态</th>
-                  <th>来源</th>
-                  <th>大小</th>
-                  <th>最后刷新</th>
-                  <th>操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {files.map((file) => (
-                  <tr key={file.id ?? file.name}>
-                    <td>
-                      <div className="mono">{file.name}</div>
-                      {file.label && <div className="faint">{file.label}</div>}
-                    </td>
-                    <td>{file.provider ?? file.type ?? "-"}</td>
-                    <td>{file.email ?? file.account ?? "-"}</td>
-                    <td>
-                      <span className={fileStatusClass(file)}>
-                        {file.status ?? (file.disabled ? "disabled" : "ready")}
-                      </span>
-                      {file.status_message && <div className="faint">{file.status_message}</div>}
-                    </td>
-                    <td>{file.source ?? (file.runtime_only ? "memory" : "file")}</td>
-                    <td>{formatBytes(file.size)}</td>
-                    <td>{formatDate(file.last_refresh ?? file.updated_at ?? file.modtime)}</td>
-                    <td>
-                      <div className="actions">
-                        <button
-                          className="icon-button"
-                          disabled={file.runtime_only || file.source === "memory"}
-                          title="下载"
-                          type="button"
-                          onClick={() => downloadFile(file)}
-                        >
-                          <Icon name="download" />
-                        </button>
-                        <button
-                          className="icon-button"
-                          disabled={file.runtime_only || file.source === "memory"}
-                          title="删除"
-                          type="button"
-                          onClick={() => deleteFile(file)}
-                        >
-                          <Icon name="trash" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-                {files.length === 0 && (
-                  <tr>
-                    <td colSpan={8}>
-                      <div className="empty-state">暂无认证文件</div>
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
+      <div className="grid four">
+        <div className="stat-card">
+          <div className="stat-label">认证文件</div>
+          <div className="stat-value">{files.length}</div>
+          <div className="stat-trend">磁盘文件 {fileCount} 个</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">可用</div>
+          <div className="stat-value">{readyCount}</div>
+          <div className="stat-trend">ready / active</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">等待或内存</div>
+          <div className="stat-value">{warningCount}</div>
+          <div className="stat-trend">wait / runtime</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">异常</div>
+          <div className="stat-value">{errorCount}</div>
+          <div className="stat-trend">disabled / unavailable</div>
+        </div>
+      </div>
 
-        <aside className="panel">
+      <div className="auth-files-layout">
+        <div className="auth-files-main">
+          <section className="panel">
+            <div className="panel-header auth-toolbar">
+              <div className="auth-search">
+                <Icon name="search" size={16} />
+                <input
+                  placeholder="搜索文件、账号、Provider"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                />
+              </div>
+              <select
+                className="auth-filter-select"
+                value={providerFilter}
+                onChange={(event) => setProviderFilter(event.target.value)}
+              >
+                <option value="all">全部 Provider</option>
+                {providerOptions.map((provider) => (
+                  <option key={provider} value={provider}>
+                    {provider}
+                  </option>
+                ))}
+              </select>
+              <div className="segmented compact">
+                <button className={statusFilter === "all" ? "active" : ""} type="button" onClick={() => setStatusFilter("all")}>
+                  全部
+                </button>
+                <button className={statusFilter === "ready" ? "active" : ""} type="button" onClick={() => setStatusFilter("ready")}>
+                  可用
+                </button>
+                <button className={statusFilter === "warning" ? "active" : ""} type="button" onClick={() => setStatusFilter("warning")}>
+                  等待
+                </button>
+                <button className={statusFilter === "error" ? "active" : ""} type="button" onClick={() => setStatusFilter("error")}>
+                  异常
+                </button>
+              </div>
+              <span className="badge">{filteredFiles.length} / {files.length}</span>
+            </div>
+          </section>
+
+          <div className="auth-card-grid">
+            {filteredFiles.map((file) => {
+              const canUseFileActions = !file.runtime_only && file.source !== "memory";
+              return (
+                <article className={`auth-file-card ${statusKind(file)}`} key={file.id ?? file.name}>
+                  <div className="auth-card-top">
+                    <div className={`auth-provider-avatar ${providerTone(file)}`}>{providerInitial(file)}</div>
+                    <div className="auth-card-title">
+                      <strong>{providerName(file)}</strong>
+                      <span className="mono">{file.name}</span>
+                    </div>
+                    <span className={fileStatusClass(file)}>{statusLabel(file)}</span>
+                  </div>
+
+                  <div className="auth-account-line">
+                    <span>{accountLabel(file)}</span>
+                    {file.label && <span className="tag">{file.label}</span>}
+                  </div>
+
+                  {file.status_message && <div className="auth-card-message">{file.status_message}</div>}
+
+                  <div className="auth-card-meta">
+                    <div>
+                      <span>来源</span>
+                      <strong>{file.source ?? (file.runtime_only ? "memory" : "file")}</strong>
+                    </div>
+                    <div>
+                      <span>大小</span>
+                      <strong>{formatBytes(file.size)}</strong>
+                    </div>
+                    <div>
+                      <span>最后刷新</span>
+                      <strong>{formatDate(file.last_refresh ?? file.updated_at ?? file.modtime)}</strong>
+                    </div>
+                  </div>
+
+                  <div className="auth-card-actions">
+                    <button
+                      className="button subtle"
+                      disabled={!canUseFileActions}
+                      type="button"
+                      onClick={() => downloadFile(file)}
+                    >
+                      <Icon name="download" size={16} />
+                      下载
+                    </button>
+                    <button
+                      className="button"
+                      disabled={!canUseFileActions}
+                      type="button"
+                      onClick={() => deleteFile(file)}
+                    >
+                      <Icon name="trash" size={16} />
+                      删除
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+
+          {filteredFiles.length === 0 && (
+            <div className="empty-state">没有匹配的认证文件</div>
+          )}
+        </div>
+
+        <aside className="panel auth-vertex-panel">
           <div className="panel-header">
             <h3 className="panel-title">
               <Icon name="upload" size={16} />
@@ -204,13 +353,16 @@ export default function AuthFiles() {
                 onChange={(event) => setVertexLocation(event.target.value)}
               />
             </div>
-            <label className="dropzone" htmlFor="vertex-import">
+            <label className="dropzone auth-vertex-dropzone" htmlFor="vertex-import">
               <span>
                 <Icon name="upload" size={18} />
               </span>
               <span>选择 Vertex 服务账号 JSON</span>
             </label>
             <input id="vertex-import" hidden type="file" accept="application/json,.json" onChange={importVertex} />
+            <div className="empty-state">
+              导入后会生成对应的认证文件，并出现在左侧卡片列表中。
+            </div>
           </div>
         </aside>
       </div>

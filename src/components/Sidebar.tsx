@@ -1,5 +1,6 @@
 import { NavLink } from "react-router-dom";
 import Icon, { IconName } from "./Icon";
+import LogoMark from "./LogoMark";
 import "./Sidebar.css";
 
 interface NavItem {
@@ -24,7 +25,9 @@ export default function Sidebar() {
   return (
     <aside className="sidebar">
       <div className="sidebar-brand">
-        <div className="brand-mark">C</div>
+        <div className="brand-mark">
+          <LogoMark size={34} />
+        </div>
         <div>
           <strong>CPAM</strong>
           <span>CLIProxyAPI</span>
