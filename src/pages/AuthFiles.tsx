@@ -124,9 +124,56 @@ function accountLabel(file: AuthFile): string {
   return file.email ?? file.account ?? file.label ?? "-";
 }
 
+function objectValue(value: unknown): Record<string, unknown> | null {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  if (typeof value === "string") {
+    try {
+      const parsed: unknown = JSON.parse(value);
+      return objectValue(parsed);
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function stringValue(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed || null;
+}
+
 function planLabel(file: AuthFile): string {
-  const rawPlan = file.plan ?? file.plan_type ?? file.planType;
-  const plan = rawPlan?.trim();
+  const idToken = objectValue(file.id_token);
+  const metadata = objectValue(file.metadata);
+  const attributes = objectValue(file.attributes);
+  const metadataIdToken = objectValue(metadata?.id_token);
+  const attributesIdToken = objectValue(attributes?.id_token);
+  const candidates = [
+    file.plan,
+    file.plan_type,
+    file.planType,
+    idToken?.plan,
+    idToken?.plan_type,
+    idToken?.planType,
+    metadata?.plan,
+    metadata?.plan_type,
+    metadata?.planType,
+    metadataIdToken?.plan,
+    metadataIdToken?.plan_type,
+    metadataIdToken?.planType,
+    attributes?.plan,
+    attributes?.plan_type,
+    attributes?.planType,
+    attributesIdToken?.plan,
+    attributesIdToken?.plan_type,
+    attributesIdToken?.planType,
+  ];
+  const plan = candidates.map(stringValue).find(Boolean);
   if (!plan) {
     return "-";
   }
