@@ -95,6 +95,147 @@ remote-management:
   panel-github-repository: "https://github.com/ysxk/new-cpam"
 ```
 
+## 接入此管理面板
+
+CLIProxyAPI 会从 `remote-management.panel-github-repository` 指向的 GitHub Release 中下载 `management.html`，并通过以下地址提供面板：
+
+```text
+http://<你的 CPA 地址>:8317/management.html
+```
+
+使用本仓库面板时，核心配置如下：
+
+```yaml
+remote-management:
+  # 从非 localhost 访问管理 API 或面板时需要开启。
+  allow-remote: true
+
+  # 必填。为空会禁用整个 /v0/management 管理 API。
+  secret-key: "换成你的管理密钥"
+
+  # 必须保持 false，否则 /management.html 会返回 404。
+  disable-control-panel: false
+
+  # 使用本仓库发布的 management.html。
+  panel-github-repository: "https://github.com/ysxk/new-cpam"
+```
+
+如果只在 CPA 所在机器本机访问，可以把 `allow-remote` 改为 `false`。如果通过服务器 IP、域名、反向代理或 Docker 端口映射访问，通常需要设为 `true`。
+
+### Docker 安装的 CPA
+
+Docker 方式不需要改容器镜像，也不需要把本仓库打进镜像。只需要修改宿主机上挂载进容器的配置文件。
+
+官方 Docker 启动示例会把宿主机配置挂载到容器内：
+
+```bash
+docker run --rm \
+  -p 8317:8317 \
+  -v /path/to/your/config.yaml:/CLIProxyAPI/config.yaml \
+  -v /path/to/your/auth-dir:/root/.cli-proxy-api \
+  eceasy/cli-proxy-api:latest
+```
+
+这里要改的是宿主机的：
+
+```text
+/path/to/your/config.yaml
+```
+
+在该文件里加入或修改：
+
+```yaml
+remote-management:
+  allow-remote: true
+  secret-key: "换成你的管理密钥"
+  disable-control-panel: false
+  panel-github-repository: "https://github.com/ysxk/new-cpam"
+```
+
+然后重启容器：
+
+```bash
+docker restart <container-name>
+```
+
+如果使用 `docker compose`，同样修改 compose 项目里的 `config.yaml`，然后执行：
+
+```bash
+docker compose restart
+```
+
+完成后打开：
+
+```text
+http://<服务器 IP 或域名>:8317/management.html
+```
+
+首次进入页面后，在右上角填入管理密钥，也就是 `remote-management.secret-key` 的值。
+
+### 手动安装的 CPA
+
+手动安装时也不需要改本仓库代码，只需要修改 CPA 实际使用的配置文件。
+
+常见配置文件位置：
+
+- 直接运行二进制：默认读取启动目录下的 `config.yaml`。
+- 使用 `--config` 启动：读取命令中指定的文件，例如 `./cli-proxy-api --config /path/to/config.yaml`。
+- macOS Homebrew 服务：默认读取 `$(brew --prefix)/etc/cliproxyapi.conf`。
+- Linux systemd 或安装脚本：以服务文件里的 `--config` 参数为准；没有 `--config` 时看服务启动目录下的 `config.yaml`。
+
+在实际配置文件中加入或修改：
+
+```yaml
+remote-management:
+  allow-remote: true
+  secret-key: "换成你的管理密钥"
+  disable-control-panel: false
+  panel-github-repository: "https://github.com/ysxk/new-cpam"
+```
+
+如果是本机访问，可以使用：
+
+```yaml
+remote-management:
+  allow-remote: false
+  secret-key: "换成你的管理密钥"
+  disable-control-panel: false
+  panel-github-repository: "https://github.com/ysxk/new-cpam"
+```
+
+修改后重启 CPA。常见方式：
+
+```bash
+# systemd 用户服务
+systemctl --user restart cli-proxy-api
+
+# Homebrew 服务
+brew services restart cliproxyapi
+
+# 直接运行二进制时，停止旧进程后重新启动
+./cli-proxy-api --config /path/to/config.yaml
+```
+
+然后访问：
+
+```text
+http://localhost:8317/management.html
+```
+
+如果从另一台机器访问，则使用服务器 IP 或域名：
+
+```text
+http://<服务器 IP 或域名>:8317/management.html
+```
+
+新版 CPA 使用 `remote-management.allow-remote` 和 `remote-management.secret-key`。如果你的旧版配置仍是 `allow-remote-management`、`remote-management-key` 这类顶层字段，建议先升级 CPA，再使用上面的新版配置。
+
+参考官方文档：
+
+- [Web UI](https://help.router-for.me/cn/management/webui)
+- [基础配置](https://help.router-for.me/cn/configuration/basic)
+- [Docker 运行](https://help.router-for.me/cn/docker/docker)
+
 ## 管理 API
 
 前端通过 `src/api/client.ts` 访问管理 API。默认地址规则：
