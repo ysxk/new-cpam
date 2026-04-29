@@ -43,6 +43,36 @@ function needsCallback(flow: AuthFlow | null): boolean {
   return Boolean(flow && flow.provider !== "kimi");
 }
 
+async function copyText(value: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+  } catch {
+    // Fall back for non-HTTPS management pages.
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = value;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.top = "-9999px";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  textarea.setSelectionRange(0, textarea.value.length);
+
+  try {
+    return document.execCommand("copy");
+  } catch {
+    return false;
+  } finally {
+    textarea.remove();
+  }
+}
+
 export default function OAuthLogin() {
   const [flows, setFlows] = useState<AuthFlow[]>([]);
   const [activeFlow, setActiveFlow] = useState<AuthFlow | null>(null);
@@ -107,7 +137,7 @@ export default function OAuthLogin() {
       };
       setActiveFlow(nextFlow);
       setFlows((items) => [nextFlow, ...items.filter((item) => item.state !== response.state)].slice(0, 10));
-      window.open(response.url, "_blank", "noopener,noreferrer");
+      setMessage("授权地址已生成，请在弹窗中复制后打开");
     } catch (startError) {
       setError(startError instanceof Error ? startError.message : "发起登录失败");
     }
@@ -169,11 +199,10 @@ export default function OAuthLogin() {
     if (!activeFlow?.url) {
       return;
     }
-    try {
-      await navigator.clipboard.writeText(activeFlow.url);
+    if (await copyText(activeFlow.url)) {
       setMessage("授权地址已复制");
-    } catch {
-      setError("复制失败");
+    } else {
+      setError("浏览器不允许自动复制，请手动选中授权地址复制");
     }
   }
 
@@ -437,10 +466,6 @@ export default function OAuthLogin() {
                 <textarea id="oauth-auth-url" className="compact-textarea mono" readOnly value={activeFlow.url} />
               </div>
               <div className="actions">
-                <button className="button" type="button" onClick={() => window.open(activeFlow.url, "_blank", "noopener,noreferrer")}>
-                  <Icon name="archive" size={16} />
-                  打开授权页
-                </button>
                 <button className="button subtle" type="button" onClick={copyAuthUrl}>
                   <Icon name="copy" size={16} />
                   复制授权地址
